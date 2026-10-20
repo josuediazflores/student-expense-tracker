@@ -1,17 +1,44 @@
-name: Build and test
+# CI runs automatically on every push and pull request. It builds the
+# project and runs the tests on a clean checkout of your repo, so a red X
+# on GitHub usually means something is broken for your teammates even if
+# it works on your machine — most often a file you forgot to commit.
+#
+# The only line you should normally need to edit is the dependency install
+# step below, when your project needs a library beyond Qt and SQLite
+# (e.g. Boost).
+
+name: CI
+
 on:
   push:
   pull_request:
+  # workflow_dispatch lets you also start a run by hand from the Actions
+  # tab on GitHub.
+  workflow_dispatch:
+
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          # qt6-base-dev provides Qt Widgets and the Qt SQL module, but NOT
+          # the SQLite driver itself -- libqt6sql6-sqlite is what makes
+          # QSqlDatabase::addDatabase("QSQLITE") actually work.
+          sudo apt-get install -y qt6-base-dev libqt6sql6-sqlite
+          # Add other libraries your project needs here, for example:
+          # sudo apt-get install -y libboost-all-dev
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build
+
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build
+
       - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
