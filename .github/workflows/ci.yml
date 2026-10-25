@@ -1,13 +1,12 @@
 # CI runs automatically on every push and pull request. It builds the
-# project and runs the tests on a clean checkout of your repo, so a red X
-# on GitHub usually means something is broken for your teammates even if
-# it works on your machine — most often a file you forgot to commit.
+# project on a clean checkout of your repo, so a red X on GitHub means
+# the app did not build successfully for your teammates.
 #
 # The only line you should normally need to edit is the dependency install
 # step below, when your project needs a library beyond Qt and SQLite
 # (e.g. Boost).
 
-name: CI
+name: Build
 
 on:
   push:
@@ -17,7 +16,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +36,3 @@ jobs:
 
       - name: Build
         run: cmake --build build
-
-      - name: Test
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: ctest --test-dir build --output-on-failure

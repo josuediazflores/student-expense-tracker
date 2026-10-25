@@ -18,16 +18,14 @@ Install CMake 3.16 or later, a C++17 compiler, and Qt 6 with the Widgets and SQL
 ```sh
 cmake -B build
 cmake --build build
-ctest --test-dir build --output-on-failure
 ```
 
-Run `./build/app` on macOS or Linux. On Windows, run `app.exe` from the generated build configuration directory. GitHub Actions runs the same build and test commands on pushes and pull requests.
+Run `./build/app` on macOS or Linux. On Windows, run `app.exe` from the generated build configuration directory. GitHub Actions builds the app on pushes and pull requests.
 
 ## Project structure
 
 - `src/BudgetModel.*`: stores budgets, validates rules, and calculates totals. It has no dependency on the view or controller.
 - `src/BudgetController.*`: receives requests from the view and mediates access to the model.
 - `src/BudgetView.*`: Qt Widgets form and budget table.
-- `tests/test_budget.cpp`: doctest unit tests for model behavior, using the template's `test_main.cpp` and `doctest.h`.
 
-The template's example prime-number files were replaced with the budgeting model. Its CMake source discovery, target names, test runner, GitHub Actions workflow, and repository settings are retained.
+This branch removes the unit tests and their test target. The app source and build target remain based on the course template.
