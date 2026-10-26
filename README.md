@@ -23,7 +23,7 @@ cmake --build build
 
 Run `./build/app` on macOS or Linux. On Windows, run `app.exe` from the generated build configuration directory. GitHub Actions builds the app and runs unit tests on pushes and pull requests.
 
-## Run the unit test
+## Run the unit tests
 
 After building, run:
 
@@ -33,6 +33,10 @@ ctest --output-on-failure
 ```
 
 `tests/test_expense_totals.cpp` contains Xiaochao Zhou's test. It starts with a $100.00 budget, adds expenses of $12.50, $23.75, and $5.99, and checks spending and remaining budget after each addition. The final totals are $42.24 spent and $57.76 remaining. Amounts use integer cents; overspending produces a negative remaining balance.
+
+`tests/test_expense_invalid_inputs.cpp` adds independent test cases for rejecting non-integer cents, rejecting a missing amount (`nullptr`), and accepting zero. Rejected inputs must provide an error and leave total spending, remaining budget, and the allocated budget unchanged.
+
+The model's `addExpense()` API requires an integer number of cents: $12.50 is passed as `1250`. Floating-point arguments and `nullptr` are rejected rather than silently converted. Integer `0` is a valid amount and is distinct from missing input.
 
 Tests use the vendored doctest header. Each new test file should include `doctest.h`; only `tests/test_main.cpp` defines the test runner.
 
