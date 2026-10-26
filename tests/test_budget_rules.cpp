@@ -70,6 +70,15 @@ TEST_CASE("an end date one day before the start date is rejected") {
     checkRejectedBudgetChangesNothing(model, error);
 }
 
+TEST_CASE("a budget that starts and ends on the same day is accepted") {
+    BudgetModel model = modelWithExistingBudget();
+    const QDate day(2026, 10, 26);
+
+    REQUIRE(model.addBudget({"Dining out", 2500, day, day}));
+    CHECK(model.budgets().size() == 2);
+    CHECK(model.totalCents() == 22500);
+}
+
 TEST_CASE("a missing start or end date is rejected") {
     BudgetModel model = modelWithExistingBudget();
     QString error;

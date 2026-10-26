@@ -7,7 +7,7 @@
 TEST_CASE("a monthly budget is spread evenly across every day of the month") {
     // $310.00 from Oct 1 to Oct 31 covers 31 days.
     const Budget budget{"Groceries", 31000, QDate(2026, 10, 1), QDate(2026, 10, 31)};
-    CHECK(budget.amountPerDay() == doctest::Approx(11.00)); // INTENTIONAL ERROR for CI check
+    CHECK(budget.amountPerDay() == doctest::Approx(10.00));
 }
 
 TEST_CASE("a budget that starts and ends on the same day keeps its full amount") {
