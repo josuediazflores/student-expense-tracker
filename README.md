@@ -32,20 +32,25 @@ cd build
 ctest --output-on-failure
 ```
 
-`tests/test_expense_totals.cpp` contains Xiaochao Zhou's test. It starts with a $100.00 budget, adds expenses of $12.50, $23.75, and $5.99, and checks spending and remaining budget after each addition. The final totals are $42.24 spent and $57.76 remaining. Amounts use integer cents; overspending produces a negative remaining balance.
+`tests/test_expense_totals.cpp` contains Xiaochao Zhou's test. It starts with a $100.00 budget, adds expenses of $12.50, $23.75, and $5.99, and checks spending and remaining budget after each addition. The final totals are $42.24 spent and $57.76 remaining. Overspending produces a negative remaining balance.
 
-`tests/test_expense_invalid_inputs.cpp` contains independent cases for missing amounts (`nullptr`), text, negative numbers, nonfinite numbers, boolean values, and amounts that would overflow. It also checks that integer zero remains valid. Rejected inputs must provide an error and leave total spending, remaining budget, and the allocated budget unchanged.
+`tests/test_expense_invalid_inputs.cpp` contains independent cases for missing amounts (`nullptr`), malformed text, negative amounts, unsupported numeric argument types, and amounts that would overflow. Rejected inputs must provide an error and leave total spending, remaining budget, and the allocated budget unchanged.
 
-`tests/test_expense_precision.cpp` contains separate cases for rounding below, at, and above a half-cent boundary, floating-point zero, rounding each expense before accumulation, and the supported numeric limit.
+`tests/test_expense_precision.cpp` contains separate cases for preserving fractional cents, exact decimal accumulation, tiny positive expenses, negative fractional remaining balances, and the supported numeric limit. `tests/test_decimal_cents.cpp` verifies the underlying exact decimal arithmetic.
 
-The model's `addExpense()` API takes amounts in **cents**, including fractional cents. For example, $12.50 is passed as `1250`, and $12.345 is passed as `1234.5`. Each nonnegative expense is rounded to the nearest whole cent before accumulation; an exact half-cent rounds up. Thus $12.344 becomes $12.34, and $12.345 becomes $12.35. Positive amounts below half a cent round to zero. Existing integer-cent calls remain exact, and overspending produces a negative remaining balance.
+The user-facing `addExpense()` API takes **decimal text in dollars**, using `QString` or UTF-8 C-string input. Pass `"12.99"` for $12.99; the model converts it exactly to `1299` cents by shifting decimal digits. Pass `"12.345"` for $12.345; it remains `1234.5` cents. Fractional cents are retained without rounding or truncation. Adding `"12.505"` and `"23.755"` produces exactly `3626` cents ($36.26). Small positive amounts are retained, and overspending produces a negative fractional remaining balance.
 
-Text (including numeric-looking strings) must be explicitly parsed by the input layer before calling the model. The model rejects text, `nullptr`, booleans, negative amounts, NaN, infinity, and values outside the supported integer-cent range. Integral input types wider than 64 bits are unsupported and rejected before conversion. Integer `0` and floating-point `0.0` are valid amounts and are distinct from missing input.
+Spending and remaining balances use `DecimalCents`, an exact decimal value backed by decimal digits. Read its canonical cents representation with `.toString()`; these getters no longer return `qint64`, because that would discard fractional cents. Existing whole-cent comparisons remain valid. Budget allocations stay in integer cents. Spending remains limited to the exact value of `qint64::max()` cents, including its fractional boundary.
+
+Amounts enter the function as text so binary floating-point arithmetic cannot alter a value before validation. The expense path performs only decimal parsing and integer digit operations. `addExpense(12.99)`, integer arguments, and externally constructed `DecimalCents` arguments are rejected; callers must supply the original text rather than first converting it to a number. Numeric-looking text is now valid, while text such as `"abc"` remains invalid. Internal cents insertion is private.
+
+The text format uses ASCII digits with an optional decimal fraction, such as `"12"`, `"12.99"`, or `"0.00001"`. Surrounding whitespace is trimmed; leading zeros and extra fractional digits are retained numerically. Exponents, currency symbols, grouping commas, internal whitespace, a leading plus, and missing integer or fractional digits are rejected. Negative amounts are rejected; textual zero, including `"-0.000"`, is valid. Empty text, `nullptr`, NaN/infinity text, booleans, native numeric values, and totals exceeding exactly `9223372036854775807` cents are rejected without changing balances.
 
 Tests use the vendored doctest header. Each new test file should include `doctest.h`; only `tests/test_main.cpp` defines the test runner.
 
 ## Project structure
 
 - `src/BudgetModel.*`: stores budgets, validates rules, and calculates totals. It has no dependency on the view or controller.
+- `src/DecimalCents.*`: preserves fractional cents with exact decimal arithmetic.
 - `src/BudgetController.*`: receives requests from the view and mediates access to the model.
 - `src/BudgetView.*`: Qt Widgets form and budget table.

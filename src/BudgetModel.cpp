@@ -1,6 +1,7 @@
 #include "BudgetModel.h"
 
-#include <cmath>
+#include <QRegularExpression>
+
 #include <limits>
 
 double Budget::amountPerDay() const {
@@ -37,49 +38,52 @@ qint64 BudgetModel::totalCents() const {
     return sum;
 }
 
-bool BudgetModel::addExpense(qint64 amountCents, QString *error) {
-    if (amountCents < 0) {
+bool BudgetModel::addExpense(const QString &amountDollars, QString *error) {
+    const QString text = amountDollars.trimmed();
+    if (text.isEmpty()) return addExpense(nullptr, error);
+
+    static const QRegularExpression decimalDollars(QStringLiteral("^-?[0-9]+(?:[.][0-9]+)?$"));
+    if (!decimalDollars.match(text).hasMatch()) {
+        if (error) *error = QStringLiteral("Enter a decimal dollar amount such as 12.99.");
+        return false;
+    }
+
+    // Shift dollar digits into cents: "12.345" -> 1234.5 cents, without rounding.
+    const auto cents = DecimalCents::fromDecimal(text + QStringLiteral("e2"));
+    if (!cents) {
+        if (error) *error = QStringLiteral("Expense amount cannot be represented.");
+        return false;
+    }
+    return addExpenseCents(*cents, error);
+}
+
+bool BudgetModel::addExpense(const char *amountDollars, QString *error) {
+    if (!amountDollars) return addExpense(nullptr, error);
+    return addExpense(QString::fromUtf8(amountDollars), error);
+}
+
+bool BudgetModel::addExpense(std::nullptr_t, QString *error) {
+    if (error) *error = QStringLiteral("Expense amount is required.");
+    return false;
+}
+
+bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, QString *error) {
+    if (amountCents.isNegative()) {
         if (error) *error = QStringLiteral("Expense amount cannot be negative.");
         return false;
     }
-    if (amountCents > std::numeric_limits<qint64>::max() - spendingCents_) {
+    // Check a candidate total first so rejected expenses leave balances unchanged.
+    const DecimalCents updatedSpending = spendingCents_ + amountCents;
+    if (DecimalCents(std::numeric_limits<qint64>::max()) < updatedSpending) {
         if (error) *error = QStringLiteral("Total spending is too large.");
         return false;
     }
 
-    spendingCents_ += amountCents;
+    spendingCents_ = updatedSpending;
     if (error) error->clear();
     return true;
 }
 
-bool BudgetModel::addRoundedExpense(long double amountCents, QString *error) {
-    if (!std::isfinite(amountCents)) {
-        if (error) *error = QStringLiteral("Expense amount must be finite.");
-        return false;
-    }
-    if (amountCents < 0) {
-        if (error) *error = QStringLiteral("Expense amount cannot be negative.");
-        return false;
-    }
-
-    const long double roundedCents = std::round(amountCents);
-    // 2^63 is exact even on platforms where long double has double precision.
-    const long double upperLimit = -static_cast<long double>(std::numeric_limits<qint64>::min());
-    if (roundedCents >= upperLimit) {
-        if (error) *error = QStringLiteral("Expense amount is too large.");
-        return false;
-    }
-    return addExpense(static_cast<qint64>(roundedCents), error);
-}
-
-bool BudgetModel::addUnsignedExpense(quint64 amountCents, QString *error) {
-    if (amountCents > static_cast<quint64>(std::numeric_limits<qint64>::max())) {
-        if (error) *error = QStringLiteral("Expense amount is too large.");
-        return false;
-    }
-    return addExpense(static_cast<qint64>(amountCents), error);
-}
-
-qint64 BudgetModel::remainingBudgetCents() const {
-    return totalCents() - spendingCents_;
+DecimalCents BudgetModel::remainingBudgetCents() const {
+    return DecimalCents(totalCents()) - spendingCents_;
 }

@@ -23,7 +23,7 @@ include(CTest)
 if(BUILD_TESTING)
     # Teammates can add test files without defining another main().
     file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
-    add_executable(test_build ${TEST_SOURCES} src/BudgetModel.cpp)
+    add_executable(test_build ${TEST_SOURCES} src/BudgetModel.cpp src/DecimalCents.cpp)
     target_link_libraries(test_build PRIVATE Qt6::Core)
     target_include_directories(test_build PRIVATE src tests)
     add_test(NAME test_build COMMAND test_build)
