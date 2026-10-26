@@ -11,15 +11,15 @@ TEST_CASE("adding multiple expenses updates total spending and remaining budget"
     CHECK(model.remainingBudgetCents() == 10000);
 
     // Start with $100.00 and add expenses of $12.50, $23.75, and $5.99.
-    REQUIRE(model.addExpense(1250));
+    REQUIRE(model.addExpense("12.50"));
     CHECK(model.totalSpendingCents() == 1250);
     CHECK(model.remainingBudgetCents() == 8750);
 
-    REQUIRE(model.addExpense(2375));
+    REQUIRE(model.addExpense("23.75"));
     CHECK(model.totalSpendingCents() == 3625);
     CHECK(model.remainingBudgetCents() == 6375);
 
-    REQUIRE(model.addExpense(599));
+    REQUIRE(model.addExpense("5.99"));
     CHECK(model.totalSpendingCents() == 4224);
     CHECK(model.remainingBudgetCents() == 5776);
     CHECK(model.totalCents() == 10000);

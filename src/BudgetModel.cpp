@@ -1,41 +1,8 @@
 #include "BudgetModel.h"
 
-#include <charconv>
-#include <cmath>
+#include <QRegularExpression>
+
 #include <limits>
-
-namespace {
-template <typename Float>
-std::optional<DecimalCents> decimalFromFloating(Float amountCents, QString *error) {
-    auto reject = [error](const QString &message) -> std::optional<DecimalCents> {
-        if (error) *error = message;
-        return std::nullopt;
-    };
-    if (!std::isfinite(amountCents))
-        return reject(QStringLiteral("Expense amount must be finite."));
-    if (amountCents < 0)
-        return reject(QStringLiteral("Expense amount cannot be negative."));
-
-    const long double upperLimit = -static_cast<long double>(std::numeric_limits<qint64>::min());
-    if (static_cast<long double>(amountCents) >= upperLimit)
-        return reject(QStringLiteral("Expense amount is too large."));
-
-    // An integral float near the limit must retain its actual integer value.
-    if (std::trunc(amountCents) == amountCents)
-        return DecimalCents(static_cast<qint64>(amountCents));
-
-    // Format the original float type, before promotion, without a precision cutoff.
-    char buffer[128];
-    const auto result = std::to_chars(buffer, buffer + sizeof(buffer), amountCents);
-    if (result.ec != std::errc{})
-        return reject(QStringLiteral("Expense amount cannot be represented."));
-    auto decimal = DecimalCents::fromDecimal(
-        QString::fromLatin1(buffer, static_cast<int>(result.ptr - buffer)));
-    if (!decimal)
-        return reject(QStringLiteral("Expense amount cannot be represented."));
-    return decimal;
-}
-}
 
 double Budget::amountPerDay() const {
     const qint64 days = startDate.daysTo(endDate) + 1;
@@ -71,11 +38,36 @@ qint64 BudgetModel::totalCents() const {
     return sum;
 }
 
-bool BudgetModel::addExpense(qint64 amountCents, QString *error) {
-    return addExpense(DecimalCents(amountCents), error);
+bool BudgetModel::addExpense(const QString &amountDollars, QString *error) {
+    const QString text = amountDollars.trimmed();
+    if (text.isEmpty()) return addExpense(nullptr, error);
+
+    static const QRegularExpression decimalDollars(QStringLiteral("^-?[0-9]+(?:[.][0-9]+)?$"));
+    if (!decimalDollars.match(text).hasMatch()) {
+        if (error) *error = QStringLiteral("Enter a decimal dollar amount such as 12.99.");
+        return false;
+    }
+
+    // Moving the decimal point by two places is exact digit processing.
+    const auto cents = DecimalCents::fromDecimal(text + QStringLiteral("e2"));
+    if (!cents) {
+        if (error) *error = QStringLiteral("Expense amount cannot be represented.");
+        return false;
+    }
+    return addExpenseCents(*cents, error);
 }
 
-bool BudgetModel::addExpense(const DecimalCents &amountCents, QString *error) {
+bool BudgetModel::addExpense(const char *amountDollars, QString *error) {
+    if (!amountDollars) return addExpense(nullptr, error);
+    return addExpense(QString::fromUtf8(amountDollars), error);
+}
+
+bool BudgetModel::addExpense(std::nullptr_t, QString *error) {
+    if (error) *error = QStringLiteral("Expense amount is required.");
+    return false;
+}
+
+bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, QString *error) {
     if (amountCents.isNegative()) {
         if (error) *error = QStringLiteral("Expense amount cannot be negative.");
         return false;
@@ -89,29 +81,6 @@ bool BudgetModel::addExpense(const DecimalCents &amountCents, QString *error) {
     spendingCents_ = updatedSpending;
     if (error) error->clear();
     return true;
-}
-
-bool BudgetModel::addFloatingExpense(float amountCents, QString *error) {
-    auto decimal = decimalFromFloating(amountCents, error);
-    return decimal && addExpense(*decimal, error);
-}
-
-bool BudgetModel::addFloatingExpense(double amountCents, QString *error) {
-    auto decimal = decimalFromFloating(amountCents, error);
-    return decimal && addExpense(*decimal, error);
-}
-
-bool BudgetModel::addFloatingExpense(long double amountCents, QString *error) {
-    auto decimal = decimalFromFloating(amountCents, error);
-    return decimal && addExpense(*decimal, error);
-}
-
-bool BudgetModel::addUnsignedExpense(quint64 amountCents, QString *error) {
-    if (amountCents > static_cast<quint64>(std::numeric_limits<qint64>::max())) {
-        if (error) *error = QStringLiteral("Expense amount is too large.");
-        return false;
-    }
-    return addExpense(static_cast<qint64>(amountCents), error);
 }
 
 DecimalCents BudgetModel::remainingBudgetCents() const {

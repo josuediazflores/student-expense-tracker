@@ -23,34 +23,18 @@ public:
     bool addBudget(const Budget &budget, QString *error = nullptr);
     const QVector<Budget> &budgets() const { return budgets_; }
     qint64 totalCents() const;
-    bool addExpense(qint64 amountCents, QString *error = nullptr);
-    bool addExpense(const DecimalCents &amountCents, QString *error = nullptr);
+    // User-facing amounts are decimal text in dollars, never binary floats.
+    bool addExpense(const QString &amountDollars, QString *error = nullptr);
+    bool addExpense(const char *amountDollars, QString *error = nullptr);
+    bool addExpense(std::nullptr_t, QString *error = nullptr);
 
-    // Preserve fractional cents, and reject missing/text input.
-    // Signed integers up to 64 bits (including literal 0) keep using the API above.
+    // Reject numeric inputs before an implicit conversion can lose precision or units.
     template <typename Amount,
-              std::enable_if_t<!std::is_integral_v<std::decay_t<Amount>> ||
-                                   !std::is_signed_v<std::decay_t<Amount>> ||
-                                   (sizeof(std::decay_t<Amount>) > sizeof(qint64)), int> = 0>
-    bool addExpense(const Amount &amountCents, QString *error = nullptr) {
-        using Value = std::decay_t<Amount>;
-        if constexpr (std::is_floating_point_v<Value>) {
-            return addFloatingExpense(amountCents, error);
-        } else if constexpr (std::is_integral_v<Value> && !std::is_same_v<Value, bool>) {
-            if constexpr (sizeof(Value) > sizeof(qint64)) {
-                if (error) *error = QStringLiteral("Expense integer type exceeds 64 bits.");
-                return false;
-            } else {
-                return addUnsignedExpense(static_cast<quint64>(amountCents), error);
-            }
-        }
-
-        if (error) {
-            if constexpr (std::is_same_v<Value, std::nullptr_t>)
-                *error = QStringLiteral("Expense amount is required.");
-            else
-                *error = QStringLiteral("Expense amount must be numeric.");
-        }
+              std::enable_if_t<!std::is_same_v<std::decay_t<Amount>, QString> &&
+                                   !std::is_convertible_v<std::decay_t<Amount>, const char *> &&
+                                   !std::is_same_v<std::decay_t<Amount>, std::nullptr_t>, int> = 0>
+    bool addExpense(const Amount &, QString *error = nullptr) {
+        if (error) *error = QStringLiteral("Enter the expense as decimal text in dollars.");
         return false;
     }
 
@@ -58,10 +42,7 @@ public:
     DecimalCents remainingBudgetCents() const;
 
 private:
-    bool addFloatingExpense(float amountCents, QString *error);
-    bool addFloatingExpense(double amountCents, QString *error);
-    bool addFloatingExpense(long double amountCents, QString *error);
-    bool addUnsignedExpense(quint64 amountCents, QString *error);
+    bool addExpenseCents(const DecimalCents &amountCents, QString *error);
     QVector<Budget> budgets_;
     DecimalCents spendingCents_;
 };
