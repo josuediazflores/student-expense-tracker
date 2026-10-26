@@ -34,9 +34,13 @@ ctest --output-on-failure
 
 `tests/test_expense_totals.cpp` contains Xiaochao Zhou's test. It starts with a $100.00 budget, adds expenses of $12.50, $23.75, and $5.99, and checks spending and remaining budget after each addition. The final totals are $42.24 spent and $57.76 remaining. Amounts use integer cents; overspending produces a negative remaining balance.
 
-`tests/test_expense_invalid_inputs.cpp` adds independent test cases for rejecting non-integer cents, rejecting a missing amount (`nullptr`), and accepting zero. Rejected inputs must provide an error and leave total spending, remaining budget, and the allocated budget unchanged.
+`tests/test_expense_invalid_inputs.cpp` contains independent cases for missing amounts (`nullptr`), text, negative numbers, nonfinite numbers, boolean values, and amounts that would overflow. It also checks that integer zero remains valid. Rejected inputs must provide an error and leave total spending, remaining budget, and the allocated budget unchanged.
 
-The model's `addExpense()` API requires an integer number of cents: $12.50 is passed as `1250`. Floating-point arguments and `nullptr` are rejected rather than silently converted. Integer `0` is a valid amount and is distinct from missing input.
+`tests/test_expense_precision.cpp` contains separate cases for rounding below, at, and above a half-cent boundary, floating-point zero, rounding each expense before accumulation, and the supported numeric limit.
+
+The model's `addExpense()` API takes amounts in **cents**, including fractional cents. For example, $12.50 is passed as `1250`, and $12.345 is passed as `1234.5`. Each nonnegative expense is rounded to the nearest whole cent before accumulation; an exact half-cent rounds up. Thus $12.344 becomes $12.34, and $12.345 becomes $12.35. Positive amounts below half a cent round to zero. Existing integer-cent calls remain exact, and overspending produces a negative remaining balance.
+
+Text (including numeric-looking strings) must be explicitly parsed by the input layer before calling the model. The model rejects text, `nullptr`, booleans, negative amounts, NaN, infinity, and values outside the supported integer-cent range. Integral input types wider than 64 bits are unsupported and rejected before conversion. Integer `0` and floating-point `0.0` are valid amounts and are distinct from missing input.
 
 Tests use the vendored doctest header. Each new test file should include `doctest.h`; only `tests/test_main.cpp` defines the test runner.
 
