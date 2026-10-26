@@ -18,17 +18,22 @@ The app follows the model-view-controller pattern.
 | Component | File | Responsibility |
 | --- | --- | --- |
 | Model | `src/BudgetModel.*` | Stores budgets and expenses, enforces validation rules, and calculates totals. It does not depend on Qt Widgets, the view, or the controller, so it can be unit tested on its own. |
+| Exact money | `src/DecimalCents.*` | An exact decimal number of cents used for spending and remaining balances. It adds, subtracts, and compares decimal digits directly, so fractional cents are never rounded or lost to floating-point error. |
 | Controller | `src/BudgetController.*` | Receives requests from the view, converts them into model calls, and returns results and error messages. |
 | View | `src/BudgetView.*` | Qt Widgets form and table. It shows data and passes user input to the controller. It holds no business rules. |
 | Entry point | `src/main.cpp` | Creates the model, controller, and view, then starts the Qt event loop. |
 
-The test executable links only `BudgetModel.cpp` and Qt Core, which keeps unit tests fast and independent of the GUI.
+The test executable links only `BudgetModel.cpp`, `DecimalCents.cpp`, and Qt Core, which keeps unit tests fast and independent of the GUI.
 
 ## Data model
 
 ### Money
 
-Budget amounts are stored as whole cents in a signed 64-bit integer (`qint64`). For example, $12.50 is stored as `1250`. Using integer cents avoids floating-point rounding errors in totals.
+Budget amounts are stored as whole cents in a signed 64-bit integer (`qint64`). For example, $12.50 is stored as `1250`.
+
+Total spending and remaining budget are stored as `DecimalCents`, which keeps fractional cents exactly. For example, $12.345 is stored as `1234.5` cents. `DecimalCents::toString()` returns the value in cents as text, and a `DecimalCents` can be compared directly with a whole number of cents.
+
+Neither type uses floating-point numbers, so totals never pick up rounding errors.
 
 ### Budget
 
@@ -41,7 +46,7 @@ Budget amounts are stored as whole cents in a signed 64-bit integer (`qint64`). 
 
 ### Expense
 
-The skeleton records each expense as an amount added to a running spending total. **Planned:** store each expense as a record with an amount and a date so the app can list entries.
+The skeleton records each expense as an exact amount added to a running `DecimalCents` spending total. **Planned:** store each expense as a record with an amount and a date so the app can list entries.
 
 ## Business rules
 
@@ -65,17 +70,18 @@ On success, `error` is cleared.
 
 - Total budget is the sum of every saved budget's amount.
 - Total spending is the sum of every accepted expense.
-- Remaining budget is total budget minus total spending. It can be negative when the user overspends.
+- Remaining budget is total budget minus total spending. It can be negative, including by a fraction of a cent, when the user overspends.
 
 ### Adding an expense
 
-`BudgetModel::addExpense(amount, error)` adds one expense to total spending.
+`BudgetModel::addExpense(amountDollars, error)` takes the amount as decimal text in dollars, either a `QString` or a C string. For example, pass `"12.99"` for $12.99.
 
-- Zero is a valid amount.
-- The model rejects negative amounts, missing values (`nullptr`), malformed input, and amounts that would overflow the spending total.
-- A rejected expense sets `error` and leaves every total unchanged.
-
-The exact accepted input format and how fractional cents are handled are documented in the README, next to the tests that check them.
+- The model converts the text to cents by shifting decimal digits, so `"12.99"` becomes exactly `1299` cents and `"12.345"` becomes exactly `1234.5` cents. Nothing is rounded.
+- Accepted text is ASCII digits with an optional decimal fraction, such as `"12"`, `"12.99"`, or `"0.00001"`. Surrounding spaces are removed first.
+- Zero is a valid amount, including `"0"` and `"-0.000"`.
+- The model rejects empty text, missing values (`nullptr`), negative amounts, text that is not a plain decimal (such as `"abc"`, `"$5"`, `"1,000"`, `"1e3"`, or `"+5"`), and any total spending above 9,223,372,036,854,775,807 cents.
+- Numbers passed directly, such as `addExpense(12.99)` or `addExpense(1299)`, are rejected. The input layer must pass the user's original text so a floating-point conversion cannot change the value first.
+- A rejected expense sets `error` and leaves every total unchanged. A successful expense clears `error`.
 
 ## User interface
 
@@ -114,6 +120,7 @@ ctest --test-dir build --output-on-failure
 | `test_budget_totals.cpp` | Troy Capela | Several budgets add up to the total budget |
 | `test_expense_totals.cpp` | Xiaochao Zhou | Multiple expenses update spending and remaining budget |
 | `test_expense_invalid_inputs.cpp` | Xiaochao Zhou | Invalid expense inputs are rejected without changing totals |
-| `test_expense_precision.cpp` | Xiaochao Zhou | Fractional-cent handling and numeric limits |
+| `test_expense_precision.cpp` | Xiaochao Zhou | Exact fractional cents, tiny expenses, negative fractional balances, and numeric limits |
+| `test_decimal_cents.cpp` | Xiaochao Zhou | Exact decimal arithmetic: addition, subtraction, comparison, signs, zero, and invalid text |
 | `test_budget_per_day.cpp` | Huy Tran | Daily amount calculation across single days, month boundaries, leap years, and a quarter |
 | `test_budget_rules.cpp` | Huy Tran | Budget validation rules, same-day budgets, category trimming, overflow limits, and error reporting |
