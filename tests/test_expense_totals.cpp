@@ -10,7 +10,7 @@ TEST_CASE("adding multiple expenses updates total spending and remaining budget"
     CHECK(model.totalSpendingCents() == 0);
     CHECK(model.remainingBudgetCents() == 10000);
 
-    // Start with $100.00 and add expenses of $12.50, $23.75, and $5.99.
+    // Enter dollars as text; expected spending and remaining balances are in cents.
     REQUIRE(model.addExpense("12.50"));
     CHECK(model.totalSpendingCents() == 1250);
     CHECK(model.remainingBudgetCents() == 8750);

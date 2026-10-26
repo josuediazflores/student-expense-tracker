@@ -23,7 +23,7 @@ public:
     bool addBudget(const Budget &budget, QString *error = nullptr);
     const QVector<Budget> &budgets() const { return budgets_; }
     qint64 totalCents() const;
-    // User-facing amounts are decimal text in dollars, never binary floats.
+    // Dollar text avoids precision already lost by upstream floating-point math.
     bool addExpense(const QString &amountDollars, QString *error = nullptr);
     bool addExpense(const char *amountDollars, QString *error = nullptr);
     bool addExpense(std::nullptr_t, QString *error = nullptr);
@@ -42,6 +42,7 @@ public:
     DecimalCents remainingBudgetCents() const;
 
 private:
+    // Only validated text can reach the exact cents accumulator.
     bool addExpenseCents(const DecimalCents &amountCents, QString *error);
     QVector<Budget> budgets_;
     DecimalCents spendingCents_;

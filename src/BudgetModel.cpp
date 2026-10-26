@@ -48,7 +48,7 @@ bool BudgetModel::addExpense(const QString &amountDollars, QString *error) {
         return false;
     }
 
-    // Moving the decimal point by two places is exact digit processing.
+    // Shift dollar digits into cents: "12.345" -> 1234.5 cents, without rounding.
     const auto cents = DecimalCents::fromDecimal(text + QStringLiteral("e2"));
     if (!cents) {
         if (error) *error = QStringLiteral("Expense amount cannot be represented.");
@@ -72,6 +72,7 @@ bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, QString *erro
         if (error) *error = QStringLiteral("Expense amount cannot be negative.");
         return false;
     }
+    // Check a candidate total first so rejected expenses leave balances unchanged.
     const DecimalCents updatedSpending = spendingCents_ + amountCents;
     if (DecimalCents(std::numeric_limits<qint64>::max()) < updatedSpending) {
         if (error) *error = QStringLiteral("Total spending is too large.");

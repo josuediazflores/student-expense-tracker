@@ -1,4 +1,5 @@
 // Author: Xiaochao Zhou
+// Each case isolates one precision rule using literal dollar text.
 #include "doctest.h"
 
 #include "BudgetModel.h"

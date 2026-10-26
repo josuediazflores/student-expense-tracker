@@ -7,6 +7,7 @@
 
 namespace {
 BudgetModel modelWithExistingExpense() {
+    // Seed a fractional balance to catch accidental resets, rounding, or mutation.
     BudgetModel model;
     REQUIRE(model.addBudget({"Food", 10000, QDate(2026, 10, 1), QDate(2026, 10, 31)}));
     REQUIRE(model.addExpense("12.5025"));
@@ -14,6 +15,7 @@ BudgetModel modelWithExistingExpense() {
 }
 
 void checkRejectedInputPreservesBalances(const BudgetModel &model, const QString &error) {
+    // Every rejected input must report an error and preserve all prior balances.
     CHECK_FALSE(error.isEmpty());
     CHECK(model.totalSpendingCents().toString() == QStringLiteral("1250.25"));
     CHECK(model.remainingBudgetCents().toString() == QStringLiteral("8749.75"));

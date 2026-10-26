@@ -123,6 +123,7 @@ std::optional<DecimalCents> DecimalCents::fromDecimal(const QString &text) {
 }
 
 void DecimalCents::normalize() {
+    // Remove insignificant zeros only; never round or discard fractional value.
     qsizetype firstNonzero = 0;
     while (firstNonzero < digits_.size() && digits_.at(firstNonzero) == QLatin1Char('0')) {
         ++firstNonzero;
@@ -173,6 +174,7 @@ int DecimalCents::compareMagnitude(const DecimalCents &left, const DecimalCents 
 }
 
 DecimalCents DecimalCents::operator+(const DecimalCents &other) const {
+    // Align decimal places, then add or subtract the integer digits exactly.
     const qsizetype scale = std::max(scale_, other.scale_);
     const QString leftDigits = digits_ + QString(scale - scale_, QLatin1Char('0'));
     const QString rightDigits = other.digits_ + QString(scale - other.scale_, QLatin1Char('0'));
