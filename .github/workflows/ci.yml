@@ -1,12 +1,11 @@
 # CI runs automatically on every push and pull request. It builds the
-# project on a clean checkout of your repo, so a red X on GitHub means
-# the app did not build successfully for your teammates.
+# project and runs its unit tests on a clean checkout of your repo.
 #
 # The only line you should normally need to edit is the dependency install
 # step below, when your project needs a library beyond Qt and SQLite
 # (e.g. Boost).
 
-name: Build
+name: CI
 
 on:
   push:
@@ -36,3 +35,7 @@ jobs:
 
       - name: Build
         run: cmake --build build
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure

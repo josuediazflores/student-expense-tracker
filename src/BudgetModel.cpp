@@ -35,3 +35,22 @@ qint64 BudgetModel::totalCents() const {
     for (const Budget &budget : budgets_) sum += budget.amountCents;
     return sum;
 }
+
+bool BudgetModel::addExpense(qint64 amountCents, QString *error) {
+    if (amountCents < 0) {
+        if (error) *error = QStringLiteral("Expense amount cannot be negative.");
+        return false;
+    }
+    if (amountCents > std::numeric_limits<qint64>::max() - spendingCents_) {
+        if (error) *error = QStringLiteral("Total spending is too large.");
+        return false;
+    }
+
+    spendingCents_ += amountCents;
+    if (error) error->clear();
+    return true;
+}
+
+qint64 BudgetModel::remainingBudgetCents() const {
+    return totalCents() - spendingCents_;
+}
