@@ -1,5 +1,6 @@
 #include "BudgetModel.h"
 
+#include <cmath>
 #include <limits>
 
 double Budget::amountPerDay() const {
@@ -49,6 +50,34 @@ bool BudgetModel::addExpense(qint64 amountCents, QString *error) {
     spendingCents_ += amountCents;
     if (error) error->clear();
     return true;
+}
+
+bool BudgetModel::addRoundedExpense(long double amountCents, QString *error) {
+    if (!std::isfinite(amountCents)) {
+        if (error) *error = QStringLiteral("Expense amount must be finite.");
+        return false;
+    }
+    if (amountCents < 0) {
+        if (error) *error = QStringLiteral("Expense amount cannot be negative.");
+        return false;
+    }
+
+    const long double roundedCents = std::round(amountCents);
+    // 2^63 is exact even on platforms where long double has double precision.
+    const long double upperLimit = -static_cast<long double>(std::numeric_limits<qint64>::min());
+    if (roundedCents >= upperLimit) {
+        if (error) *error = QStringLiteral("Expense amount is too large.");
+        return false;
+    }
+    return addExpense(static_cast<qint64>(roundedCents), error);
+}
+
+bool BudgetModel::addUnsignedExpense(quint64 amountCents, QString *error) {
+    if (amountCents > static_cast<quint64>(std::numeric_limits<qint64>::max())) {
+        if (error) *error = QStringLiteral("Expense amount is too large.");
+        return false;
+    }
+    return addExpense(static_cast<qint64>(amountCents), error);
 }
 
 qint64 BudgetModel::remainingBudgetCents() const {
