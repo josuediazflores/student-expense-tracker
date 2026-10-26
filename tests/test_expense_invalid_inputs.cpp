@@ -10,14 +10,14 @@ namespace {
 BudgetModel modelWithExistingExpense() {
     BudgetModel model;
     REQUIRE(model.addBudget({"Food", 10000, QDate(2026, 10, 1), QDate(2026, 10, 31)}));
-    REQUIRE(model.addExpense(1250));
+    REQUIRE(model.addExpense(1250.25));
     return model;
 }
 
 void checkRejectedInputPreservesBalances(const BudgetModel &model, const QString &error) {
     CHECK_FALSE(error.isEmpty());
-    CHECK(model.totalSpendingCents() == 1250);
-    CHECK(model.remainingBudgetCents() == 8750);
+    CHECK(model.totalSpendingCents().toString() == QStringLiteral("1250.25"));
+    CHECK(model.remainingBudgetCents().toString() == QStringLiteral("8749.75"));
     CHECK(model.totalCents() == 10000);
 }
 }
@@ -25,13 +25,13 @@ void checkRejectedInputPreservesBalances(const BudgetModel &model, const QString
 TEST_CASE("a null expense amount is rejected") {
     BudgetModel model;
     REQUIRE(model.addBudget({"Food", 10000, QDate(2026, 10, 1), QDate(2026, 10, 31)}));
-    REQUIRE(model.addExpense(1250));
+    REQUIRE(model.addExpense(1250.25));
     QString error;
 
     CHECK_FALSE(model.addExpense(nullptr, &error));
     CHECK_FALSE(error.isEmpty());
-    CHECK(model.totalSpendingCents() == 1250);
-    CHECK(model.remainingBudgetCents() == 8750);
+    CHECK(model.totalSpendingCents().toString() == QStringLiteral("1250.25"));
+    CHECK(model.remainingBudgetCents().toString() == QStringLiteral("8749.75"));
     CHECK(model.totalCents() == 10000);
 }
 
@@ -73,7 +73,7 @@ TEST_CASE("a negative integer expense amount is rejected") {
     checkRejectedInputPreservesBalances(model, error);
 }
 
-TEST_CASE("a negative fractional expense is rejected before rounding to zero") {
+TEST_CASE("a negative fractional expense is rejected without changing balances") {
     BudgetModel model = modelWithExistingExpense();
     QString error;
 
@@ -106,18 +106,32 @@ TEST_CASE("a floating-point expense at the integer limit is rejected safely") {
     checkRejectedInputPreservesBalances(model, error);
 }
 
-TEST_CASE("a rounded expense cannot overflow cumulative spending") {
+TEST_CASE("an exact fractional expense cannot overflow cumulative spending") {
     BudgetModel model;
     const qint64 maximum = std::numeric_limits<qint64>::max();
     REQUIRE(model.addBudget({"Food", maximum, QDate(2026, 10, 1), QDate(2026, 10, 31)}));
     REQUIRE(model.addExpense(maximum - 1));
     QString error;
 
-    // Only one cent remains; 1.5 cents rounds up to two cents.
+    // Only one cent remains; adding 1.5 cents would exceed the exact limit.
     CHECK_FALSE(model.addExpense(1.5, &error));
     CHECK_FALSE(error.isEmpty());
     CHECK(model.totalSpendingCents() == maximum - 1);
     CHECK(model.remainingBudgetCents() == 1);
+    CHECK(model.totalCents() == maximum);
+}
+
+TEST_CASE("a fraction cannot exceed the exact maximum cumulative spending") {
+    BudgetModel model;
+    const qint64 maximum = std::numeric_limits<qint64>::max();
+    REQUIRE(model.addBudget({"Food", maximum, QDate(2026, 10, 1), QDate(2026, 10, 31)}));
+    REQUIRE(model.addExpense(maximum));
+    QString error;
+
+    CHECK_FALSE(model.addExpense(0.1, &error));
+    CHECK_FALSE(error.isEmpty());
+    CHECK(model.totalSpendingCents() == maximum);
+    CHECK(model.remainingBudgetCents() == 0);
     CHECK(model.totalCents() == maximum);
 }
 
