@@ -22,11 +22,20 @@ struct Budget {
 struct Expense {
     DecimalCents amountCents;  // exact, may hold a fraction of a cent
     QDate date;
+    QString category;  // trimmed; empty means uncategorized (saved before categories existed)
 };
 
 class BudgetModel {
 public:
-    bool addBudget(const Budget &budget, QString *error = nullptr);
+    // Rejects a budget whose category (trimmed, any case) already has a budget on any of
+    // the same days, and sets *conflictIndex to the first such budget; otherwise to -1.
+    bool addBudget(const Budget &budget, QString *error = nullptr,
+                   qsizetype *conflictIndex = nullptr);
+    // Same rules as addBudget, but only rejects an overlap the old budget did not already have.
+    bool replaceBudget(qsizetype index, const Budget &budget, QString *error = nullptr);
+    // For the store's load only: keeps saved data that predates the overlap rule, so it
+    // applies every addBudget rule except that one.
+    bool restoreBudget(const Budget &budget, QString *error = nullptr);
     const QVector<Budget> &budgets() const { return budgets_; }
     qint64 totalCents() const;
     bool updateBudgetAmount(qsizetype index, qint64 amountCents, QString *error = nullptr);
@@ -42,6 +51,9 @@ public:
     bool addExpense(const QString &amountDollars, const QDate &date, QString *error = nullptr);
     bool addExpense(const char *amountDollars, const QDate &date, QString *error = nullptr);
     bool addExpense(std::nullptr_t, const QDate &date, QString *error = nullptr);
+    // The overloads above record no category.
+    bool addExpense(const QString &amountDollars, const QDate &date, const QString &category,
+                    QString *error = nullptr);
 
 private:
     template <typename Amount>
@@ -58,7 +70,12 @@ public:
     }
 
     template <typename Amount, std::enable_if_t<isNonTextAmount<Amount>, int> = 0>
-    bool addExpense(const Amount &, const QDate &, QString *error = nullptr) {
+    bool addExpense(const Amount &amount, const QDate &date, QString *error = nullptr) {
+        return addExpense(amount, date, QString(), error);
+    }
+
+    template <typename Amount, std::enable_if_t<isNonTextAmount<Amount>, int> = 0>
+    bool addExpense(const Amount &, const QDate &, const QString &, QString *error = nullptr) {
         if (error) *error = QStringLiteral("Enter the expense as decimal text in dollars.");
         return false;
     }
@@ -68,8 +85,11 @@ public:
     DecimalCents remainingBudgetCents() const;
 
 private:
+    // The rules every budget must pass; otherBudgetsCents is the total it is added to.
+    static bool checkBudget(const Budget &budget, qint64 otherBudgetsCents, QString *error);
     // Only validated text can reach the exact cents accumulator.
-    bool addExpenseCents(const DecimalCents &amountCents, const QDate &date, QString *error);
+    bool addExpenseCents(const DecimalCents &amountCents, const QDate &date,
+                         const QString &category, QString *error);
     QVector<Budget> budgets_;
     QVector<Expense> expenses_;
     DecimalCents spendingCents_;

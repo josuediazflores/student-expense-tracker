@@ -10,6 +10,21 @@ bool isDecimalDollars(const QString &text) {
     static const QRegularExpression decimalDollars(QStringLiteral("^-?[0-9]+(?:[.][0-9]+)?$"));
     return decimalDollars.match(text).hasMatch();
 }
+
+// Same category (trimmed, any case) on at least one shared day; both end dates count.
+bool overlaps(const Budget &a, const Budget &b) {
+    return a.category.trimmed().compare(b.category.trimmed(), Qt::CaseInsensitive) == 0 &&
+           a.startDate <= b.endDate && b.startDate <= a.endDate;
+}
+
+QString overlapMessage() {
+    return QStringLiteral("A budget for this category already covers some of those dates.");
+}
+
+Budget withTrimmedCategory(Budget budget) {
+    budget.category = budget.category.trimmed();
+    return budget;
+}
 }
 
 double Budget::amountPerDay() const {
@@ -17,7 +32,7 @@ double Budget::amountPerDay() const {
     return days > 0 ? static_cast<double>(amountCents) / 100.0 / days : 0.0;
 }
 
-bool BudgetModel::addBudget(const Budget &budget, QString *error) {
+bool BudgetModel::checkBudget(const Budget &budget, qint64 otherBudgetsCents, QString *error) {
     auto reject = [error](const QString &message) {
         if (error) *error = message;
         return false;
@@ -30,12 +45,51 @@ bool BudgetModel::addBudget(const Budget &budget, QString *error) {
         return reject(QStringLiteral("End date cannot be before start date."));
     if (budget.category.trimmed().isEmpty())
         return reject(QStringLiteral("Choose a category."));
-    if (budget.amountCents > std::numeric_limits<qint64>::max() - totalCents())
+    if (budget.amountCents > std::numeric_limits<qint64>::max() - otherBudgetsCents)
         return reject(QStringLiteral("Total budget is too large."));
+    return true;
+}
 
-    Budget saved = budget;
-    saved.category = saved.category.trimmed();
-    budgets_.append(saved);
+bool BudgetModel::addBudget(const Budget &budget, QString *error, qsizetype *conflictIndex) {
+    if (conflictIndex) *conflictIndex = -1;
+    if (!checkBudget(budget, totalCents(), error)) return false;
+    // Checked last, so a budget that breaks an earlier rule keeps that rule's message.
+    for (qsizetype i = 0; i < budgets_.size(); ++i) {
+        if (!overlaps(budget, budgets_.at(i))) continue;
+        if (error) *error = overlapMessage();
+        if (conflictIndex) *conflictIndex = i;
+        return false;
+    }
+
+    budgets_.append(withTrimmedCategory(budget));
+    if (error) error->clear();
+    return true;
+}
+
+bool BudgetModel::replaceBudget(qsizetype index, const Budget &budget, QString *error) {
+    if (index < 0 || index >= budgets_.size()) {
+        if (error) *error = QStringLiteral("Choose a budget to update.");
+        return false;
+    }
+    const Budget &old = budgets_.at(index);
+    if (!checkBudget(budget, totalCents() - old.amountCents, error)) return false;
+    // Only a new conflict counts, so a file saved with duplicates can still be updated.
+    for (qsizetype j = 0; j < budgets_.size(); ++j) {
+        if (j == index) continue;
+        if (overlaps(budget, budgets_.at(j)) && !overlaps(old, budgets_.at(j))) {
+            if (error) *error = overlapMessage();
+            return false;
+        }
+    }
+
+    budgets_[index] = withTrimmedCategory(budget);
+    if (error) error->clear();
+    return true;
+}
+
+bool BudgetModel::restoreBudget(const Budget &budget, QString *error) {
+    if (!checkBudget(budget, totalCents(), error)) return false;
+    budgets_.append(withTrimmedCategory(budget));
     if (error) error->clear();
     return true;
 }
@@ -104,6 +158,11 @@ bool BudgetModel::addExpense(std::nullptr_t, QString *error) {
 }
 
 bool BudgetModel::addExpense(const QString &amountDollars, const QDate &date, QString *error) {
+    return addExpense(amountDollars, date, QString(), error);
+}
+
+bool BudgetModel::addExpense(const QString &amountDollars, const QDate &date,
+                             const QString &category, QString *error) {
     const QString text = amountDollars.trimmed();
     if (text.isEmpty()) return addExpense(nullptr, date, error);
 
@@ -118,7 +177,7 @@ bool BudgetModel::addExpense(const QString &amountDollars, const QDate &date, QS
         if (error) *error = QStringLiteral("Expense amount cannot be represented.");
         return false;
     }
-    return addExpenseCents(*cents, date, error);
+    return addExpenseCents(*cents, date, category, error);
 }
 
 bool BudgetModel::addExpense(const char *amountDollars, const QDate &date, QString *error) {
@@ -132,7 +191,7 @@ bool BudgetModel::addExpense(std::nullptr_t, const QDate &, QString *error) {
 }
 
 bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, const QDate &date,
-                                  QString *error) {
+                                  const QString &category, QString *error) {
     if (amountCents.isNegative()) {
         if (error) *error = QStringLiteral("Expense amount cannot be negative.");
         return false;
@@ -149,7 +208,7 @@ bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, const QDate &
         return false;
     }
 
-    expenses_.append(Expense{amountCents, date});
+    expenses_.append(Expense{amountCents, date, category.trimmed()});
     spendingCents_ = updatedSpending;
     if (error) error->clear();
     return true;
