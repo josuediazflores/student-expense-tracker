@@ -18,17 +18,21 @@ public:
 
     void showScreen(const BudgetScreen &screen) override;
     void showMessage(const QString &text, bool isError) override;
+    // Opens the question after the controller call that raised it has returned.
+    void askBudgetConflict(const QString &message) override;
 
 private:
     void saveBudget();
     void updateSelectedBudget();
     void saveExpense();
+    void showBudgetConflict(const QString &message);
 
     BudgetController &controller_;
     QComboBox *category_;
     QLineEdit *budgetAmount_;
     QDateEdit *startDate_;
     QDateEdit *endDate_;
+    QComboBox *expenseCategory_;
     QLineEdit *expenseAmount_;
     QDateEdit *expenseDate_;
     QLabel *totalBudget_;

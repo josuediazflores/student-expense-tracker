@@ -9,6 +9,7 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -21,6 +22,15 @@ QDateEdit *makeDateEdit(const QDate &date) {
     edit->setCalendarPopup(true);
     edit->setDisplayFormat(kDateFormat);
     return edit;
+}
+
+// One category list for both pickers, so a budget and an expense always offer the same names.
+QComboBox *makeCategoryPicker() {
+    auto *picker = new QComboBox;
+    picker->addItems({QStringLiteral("Meal plan"), QStringLiteral("Groceries"),
+                      QStringLiteral("Dining out"), QStringLiteral("Transport"),
+                      QStringLiteral("School supplies"), QStringLiteral("Other")});
+    return picker;
 }
 
 QTableWidget *makeTable(const QStringList &headers) {
@@ -64,10 +74,7 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     layout->addLayout(summary);
 
     // Budget form and expense form sit side by side, each in its own labelled group.
-    category_ = new QComboBox;
-    category_->addItems({QStringLiteral("Meal plan"), QStringLiteral("Groceries"),
-                         QStringLiteral("Dining out"), QStringLiteral("Transport"),
-                         QStringLiteral("School supplies"), QStringLiteral("Other")});
+    category_ = makeCategoryPicker();
     budgetAmount_ = new QLineEdit;
     budgetAmount_->setPlaceholderText(QStringLiteral("250.00"));
     startDate_ = makeDateEdit(QDate::currentDate());
@@ -88,12 +95,14 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     budgetButtons->addWidget(updateBudget);
     budgetForm->addRow(budgetButtons);
 
+    expenseCategory_ = makeCategoryPicker();
     expenseAmount_ = new QLineEdit;
     expenseAmount_->setPlaceholderText(QStringLiteral("12.50"));
     expenseDate_ = makeDateEdit(QDate::currentDate());
 
     auto *expenseBox = new QGroupBox(QStringLiteral("Expense"));
     auto *expenseForm = new QFormLayout(expenseBox);
+    expenseForm->addRow(QStringLiteral("Category"), expenseCategory_);
     expenseForm->addRow(QStringLiteral("Amount ($)"), expenseAmount_);
     expenseForm->addRow(QStringLiteral("Date"), expenseDate_);
     auto *saveExpenseButton = new QPushButton(QStringLiteral("Save expense"));
@@ -115,7 +124,8 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     layout->addWidget(budgetsTable_);
 
     layout->addWidget(new QLabel(QStringLiteral("Expenses (newest first)")));
-    expensesTable_ = makeTable({QStringLiteral("Date"), QStringLiteral("Amount")});
+    expensesTable_ = makeTable({QStringLiteral("Date"), QStringLiteral("Category"),
+                                 QStringLiteral("Amount")});
     layout->addWidget(expensesTable_);
 }
 
@@ -134,7 +144,8 @@ void BudgetView::updateSelectedBudget() {
 }
 
 void BudgetView::saveExpense() {
-    if (controller_.addExpense(expenseAmount_->text(), expenseDate_->date()))
+    if (controller_.addExpense(expenseAmount_->text(), expenseDate_->date(),
+                               expenseCategory_->currentText()))
         expenseAmount_->clear();
 }
 
@@ -151,11 +162,42 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
     expensesTable_->setRowCount(screen.expenses.size());
     for (int row = 0; row < screen.expenses.size(); ++row) {
         const ExpenseRow &expense = screen.expenses.at(row);
-        fillRow(expensesTable_, row, {expense.date, expense.amount});
+        fillRow(expensesTable_, row, {expense.date, expense.category, expense.amount});
     }
 }
 
 void BudgetView::showMessage(const QString &text, bool isError) {
     feedback_->setStyleSheet(isError ? QStringLiteral("color: #b3261e;") : QString());
     feedback_->setText(text);
+}
+
+void BudgetView::askBudgetConflict(const QString &message) {
+    // Queued so the controller's createBudget has returned before the box's event loop starts.
+    QMetaObject::invokeMethod(this, [this, message] { showBudgetConflict(message); },
+                              Qt::QueuedConnection);
+}
+
+void BudgetView::showBudgetConflict(const QString &message) {
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(QStringLiteral("Budget already exists"));
+    box.setText(message);
+    QPushButton *update = box.addButton(QStringLiteral("Update existing budget"), QMessageBox::AcceptRole);
+    QPushButton *another = box.addButton(QStringLiteral("Choose another category"), QMessageBox::ActionRole);
+    QPushButton *cancel = box.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+    box.setDefaultButton(update);
+    box.setEscapeButton(cancel);
+    box.exec();
+
+    // Closing the box without a button counts as Cancel.
+    const QAbstractButton *clicked = box.clickedButton();
+    if (clicked == update) {
+        if (controller_.resolveBudgetConflict(ConflictChoice::UpdateExisting))
+            budgetAmount_->clear();
+    } else if (clicked == another) {
+        controller_.resolveBudgetConflict(ConflictChoice::ChooseAnotherCategory);
+        category_->setFocus();
+    } else {
+        controller_.resolveBudgetConflict(ConflictChoice::Cancel);
+    }
 }
