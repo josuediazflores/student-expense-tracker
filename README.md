@@ -56,7 +56,7 @@ Tests use the vendored doctest header. Each new test file should include `doctes
 - `src/BudgetController.*`: receives requests from the view as raw text and dates, calls the model, formats money and dates as strings, and pushes the result to the display.
 - `src/BudgetDisplay.h`: the abstract interface the controller uses to show a screen or a message. It holds only view-ready strings.
 - `src/BudgetView.*`: Qt Widgets forms and tables. It implements `BudgetDisplay`.
-- `src/BudgetStore.*`: saves the model to a SQLite file and loads it back through the model's public, validated functions. Expense amounts are stored as exact dollar text, so fractions of a cent are kept. It refuses to save after a failed load, so a file it could not read is never overwritten.
+- `src/BudgetStore.*`: saves the model to a SQLite file and loads it back through the model's public, validated functions. Expense amounts are stored as exact dollar text, so fractions of a cent are kept. It refuses to save after a failed load, so a file it could not read is never overwritten. It holds a lock file (`<file>.lock`) while open, so a second window on the same file cannot load or save.
 - `src/main.cpp`: creates the store, model, controller, and view and connects them. The data is saved in `budget.sqlite` in the per-user app data folder, which on macOS is `~/Library/Application Support/SCU Student Budget/`.
 - `tests/CheckLayering.cmake`: the layering check that `ctest` runs as the `layering` test.
 

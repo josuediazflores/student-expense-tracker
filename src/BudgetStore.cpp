@@ -165,7 +165,10 @@ bool writeExpenses(QSqlDatabase &db, const QVector<Expense> &expenses, QString *
 }
 }
 
-BudgetStore::BudgetStore(const QString &databasePath) {
+BudgetStore::BudgetStore(const QString &databasePath)
+    : lock_(databasePath + QStringLiteral(".lock")) {
+    // A lock counts as stale only when its owner process is dead, never because it is old.
+    lock_.setStaleLockTime(0);
     static int connectionCount = 0;
     connectionName_ = QStringLiteral("budget_store_%1").arg(++connectionCount);
     QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName_);
@@ -183,6 +186,8 @@ BudgetStore::~BudgetStore() {
 
 bool BudgetStore::load(BudgetModel &model, QString *error) {
     loaded_ = false;
+    if (!lock_.isLocked() && !lock_.tryLock(0))
+        return fail(error, QStringLiteral("The budget is already open in another window."));
     QSqlDatabase db = QSqlDatabase::database(connectionName_, false);
     if (!ensureOpen(db, error) || !ensureSchema(db, error)) return false;
 
