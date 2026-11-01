@@ -505,8 +505,8 @@ Branch: `huy/mvc-mvp` (local only; no upstream set). Base commit: `ed49eb0` (ori
 
 | # | Task | Role | Model | Files it may touch | Done when | Status |
 |---|------|------|-------|--------------------|-----------|--------|
-| 10 | Failing store round-trip tests, controller persistence tests, layering rules for BudgetStore | team-test-author | sonnet | tests/test_budget_store.cpp, tests/test_controller_persistence.cpp, tests/CheckLayering.cmake | new tests fail only for the missing BudgetStore API; layering check fails only on the missing BudgetStore.h; existing tests untouched | pending |
-| 11 | BudgetStore + CMake + controller store wiring + main | team-implementer | opus | src/BudgetStore.h, src/BudgetStore.cpp, CMakeLists.txt, src/BudgetController.h, src/BudgetController.cpp, src/main.cpp, README.md, REQUIREMENTS.md | full build clean; ctest 100%; `otool -L test_build` has no QtWidgets; persistence row in REQUIREMENTS.md marked Done | pending |
+| 10 | Failing store round-trip tests, controller persistence tests, layering rules for BudgetStore | team-test-author | sonnet | tests/test_budget_store.cpp, tests/test_controller_persistence.cpp, tests/CheckLayering.cmake | new tests fail only for the missing BudgetStore API; layering check fails only on the missing BudgetStore.h; existing tests untouched | done |
+| 11 | BudgetStore + CMake + controller store wiring + main | team-implementer | opus | src/BudgetStore.h, src/BudgetStore.cpp, CMakeLists.txt, src/BudgetController.h, src/BudgetController.cpp, src/main.cpp, README.md, REQUIREMENTS.md | full build clean; ctest 100%; `otool -L test_build` has no QtWidgets; persistence row in REQUIREMENTS.md marked Done | done |
 
 ### Part 2 reviews and design corrections (2026-11-01)
 
