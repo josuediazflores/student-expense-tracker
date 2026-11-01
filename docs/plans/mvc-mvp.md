@@ -215,6 +215,7 @@ A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `b
 - **D9 (added).** Money formatting uses `DecimalCents::fromDecimal(cents + "e-2")`, with no new `DecimalCents` API. Why: it reuses exact arithmetic and leaves teammates' `DecimalCents` files and tests alone.
 - **D10 (added).** The layering check inspects direct includes only. Why: it is simple, and it is enough, because `BudgetController.h` is banned from including Model headers, so nothing reaches the View transitively.
 - **D11 (added).** Controller parses the amount text before the model checks the index. Why: one code path; an empty field with no selection shows "Budget amount is required." first.
+- **D12 (CTO, during build).** The layering check lives at `tests/CheckLayering.cmake`, not `cmake/`. Why: it is a test. Keeping it under `tests/` means only the test author can write it and the implementer cannot weaken it. The first location was blocked by the team's role guard.
 
 ## Dependency enforcement
 
@@ -222,9 +223,9 @@ A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `b
    - `add_library(budget_model STATIC src/BudgetModel.cpp src/DecimalCents.cpp)`: PUBLIC include dir `src`, PUBLIC link `Qt6::Core` only.
    - `add_library(budget_controller STATIC src/BudgetController.cpp)`: PUBLIC link `budget_model Qt6::Core`.
    - `add_executable(app src/main.cpp src/BudgetView.cpp)`: PRIVATE link `budget_controller Qt6::Widgets Qt6::Sql`.
-   - Under `BUILD_TESTING`: keep `file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)` and `add_executable(test_build ${TEST_SOURCES})`, PRIVATE link `budget_controller Qt6::Core`, include `tests`, `add_test(NAME test_build ...)`. Add `add_test(NAME layering COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/CheckLayering.cmake)`.
+   - Under `BUILD_TESTING`: keep `file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)` and `add_executable(test_build ${TEST_SOURCES})`, PRIVATE link `budget_controller Qt6::Core`, include `tests`, `add_test(NAME test_build ...)`. Add `add_test(NAME layering COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_SOURCE_DIR}/tests/CheckLayering.cmake)`.
    - The result: if the Model or Controller uses a Widgets symbol, `test_build` fails to link.
-2. **`cmake/CheckLayering.cmake`** (no new dependency):
+2. **`tests/CheckLayering.cmake`** (no new dependency):
    - Requires `SOURCE_DIR` (FATAL_ERROR if unset).
    - For each rule file it reads include lines with `file(STRINGS … REGEX "^[ \t]*#[ \t]*include")` and extracts the name between `<>`/`""`. No line numbers, because this avoids CMake list-splitting on `;`/`[`.
    - It collects all violations, prints each as `LAYERING VIOLATION: <relpath> includes <name> -- <reason>`, then `message(FATAL_ERROR "Layering check failed (<n> violations).")`.
@@ -247,7 +248,7 @@ A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `b
 
 Create:
 - `src/BudgetDisplay.h`: view-ready structs + abstract display interface (D5, D6).
-- `cmake/CheckLayering.cmake`: layering check (D8b).
+- `tests/CheckLayering.cmake`: layering check (D8b).
 - `tests/test_budget_update.cpp`: `updateBudgetAmount` rules.
 - `tests/test_budget_amount_text.cpp`: `parseBudgetAmount` rules.
 - `tests/test_expense_records.cpp`: dated expenses, list, date rules, numeric guard.
@@ -283,12 +284,12 @@ T1, T2, T3 and T4 run in parallel (disjoint files). T5 needs T1 + T4. T6 needs T
 | --- | --- | --- | --- | --- |
 | T1 | Model tests: (a) update: amount changes and totals/remaining recalculate, index −1 / ==size / empty model, negative, overflow (`{max-100, 100}`: update [1] to 101 rejected, [0] to max-100 accepted), zero allowed, rejection leaves everything unchanged with exact messages, success clears error; (b) parse: `"250"`→25000, `" 12.34 "`→1234, `"12.340"`→1234, `"0"`/`"-0"`→0, `"-5"`→−500, `""`/`"  "`, `"abc"`, `"1e2"`, `"$5"`, `"1,000"`, `"12.345"`, `"92233720368547758.07"`→max, `"92233720368547758.08"` too large, `"-92233720368547758.08"`→min, `"-92233720368547758.09"` negative message; (c) expenses: record amount+date, entry order, `"0.125"`→`"12.5"`, future date accepted, `QDate()` and `QDate(2026,2,30)` rejected, amount error wins over date error, `nullptr`/null `const char*` with date, numeric `12.5`/`1250`/`DecimalCents(1250)` with date rejected with the guard message, overflow leaves list unchanged, no-date overload records a date in `[before, after]` captured around the call | team-test-author | `tests/test_budget_update.cpp`, `tests/test_budget_amount_text.cpp`, `tests/test_expense_records.cpp` | DW1 |
 | T2 | Controller tests (fake display): setDisplay pushes one screen with `$0.00` x3 and no message; createBudget("Groceries","250.00",2026-01-01,2026-01-31) gives true, row `{Groceries,$250.00,Jan 1, 2026 to Jan 31, 2026,$8.06}`, message ("Budget added.",false); failures for `"12.345"`, `"-5"`, `"abc"`, `""` give exact model messages, isError true, no extra screen, model unchanged; update(0,"300") gives `$300.00` + "Budget amount updated."; update(5,…)/(−1,…) gives "Choose a budget to update."; addExpense("12.50",2026-03-02) gives row `{Mar 2, 2026,$12.50}` + "Expense saved."; `QDate()` gives "Choose a valid expense date."; ordering (Mar 1 "1", Mar 3 "3", Mar 1 "2") gives `$3.00,$2.00,$1.00`; budget 10.00 + expense "10.005" gives remaining `-$0.005`, spending `$10.005`; `"1234.5"` gives `$1,234.50`; expense max gives `$92,233,720,368,547,758.07`; actions with no display set still return correctly | team-test-author | `tests/test_budget_controller.cpp` | DW2 |
-| T3 | Layering check per Dependency enforcement | team-test-author | `cmake/CheckLayering.cmake` | DW3 |
+| T3 | Layering check per Dependency enforcement | team-test-author | `tests/CheckLayering.cmake` | DW3 |
 | T4 | CMake targets + `layering` test | team-implementer | `CMakeLists.txt` | DW4 |
 | T5 | Model per Layer contract | team-implementer | `src/BudgetModel.h`, `src/BudgetModel.cpp` | DW5 |
 | T6 | `BudgetDisplay.h` + controller per contract | team-implementer | `src/BudgetDisplay.h`, `src/BudgetController.h`, `src/BudgetController.cpp` | DW6 |
 | T7 | View + main per contract | team-implementer | `src/BudgetView.h`, `src/BudgetView.cpp`, `src/main.cpp` | DW7 |
-| T8 | REQUIREMENTS "Walking skeleton status" rows. "Update the budget amount", "Choose an expense date", "Show total spending and remaining budget", "Show a list of expenses" become Done; "Record an expense amount" becomes "Done in the GUI"; persistence stays "Not started". README: requirements covered, GUI sentence, project structure (add `BudgetDisplay.h`, `cmake/CheckLayering.cmake`, layer rules), test description | team-implementer | `README.md`, `REQUIREMENTS.md` | DW8 |
+| T8 | REQUIREMENTS "Walking skeleton status" rows. "Update the budget amount", "Choose an expense date", "Show total spending and remaining budget", "Show a list of expenses" become Done; "Record an expense amount" becomes "Done in the GUI"; persistence stays "Not started". README: requirements covered, GUI sentence, project structure (add `BudgetDisplay.h`, `tests/CheckLayering.cmake`, layer rules), test description | team-implementer | `README.md`, `REQUIREMENTS.md` | DW8 |
 | T9 | Run Verification end to end | team-verifier | none | DW9 |
 
 Done-when commands (run from the repo root; `cmake -B build -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt` first):
@@ -302,7 +303,7 @@ errs=$(cmake --build build --target test_build -- -k 2>&1 | grep ': error')
 grep -q BudgetDisplay tests/test_budget_controller.cpp && ! grep -qE 'QWidget|QApplication|QtWidgets' tests/test_budget_controller.cpp
 
 # DW3: fails on today's tree for the right reasons
-out=$(cmake -DSOURCE_DIR="$PWD" -P cmake/CheckLayering.cmake 2>&1); rc=$?
+out=$(cmake -DSOURCE_DIR="$PWD" -P tests/CheckLayering.cmake 2>&1); rc=$?
 [ $rc -ne 0 ] && echo "$out" | grep -q 'LAYERING VIOLATION: src/BudgetController.h includes BudgetModel.h' \
   && echo "$out" | grep -q 'LAYERING CHECK: missing expected file src/BudgetDisplay.h'
 
@@ -341,8 +342,8 @@ ctest --test-dir build --output-on-failure            # expect: test_build and l
 ! otool -L build/test_build | grep -q QtWidgets       # model+controller tests run without Widgets
 
 # Mutation probes on a scratch copy (repo never modified). Each must exit nonzero with the shown message.
-probe() { S=$(mktemp -d); cp -R src cmake "$S"/; printf '\n%s\n' "$2" >> "$S/src/$1"
-  if cmake -DSOURCE_DIR="$S" -P cmake/CheckLayering.cmake >"$S/out" 2>&1; then echo "PROBE FAILED (check passed): $1"
+probe() { S=$(mktemp -d); cp -R src "$S"/; printf '\n%s\n' "$2" >> "$S/src/$1"
+  if cmake -DSOURCE_DIR="$S" -P tests/CheckLayering.cmake >"$S/out" 2>&1; then echo "PROBE FAILED (check passed): $1"
   elif grep -q "LAYERING VIOLATION: src/$1" "$S/out"; then echo "probe ok: $1"
   else echo "PROBE FAILED (wrong message): $1"; fi; rm -rf "$S"; }
 # Pass = seven "probe ok" lines and no "PROBE FAILED".
@@ -402,7 +403,7 @@ Manual check (Huy, real window, `./build/app`):
   - Expense record and `updateBudgetAmount` / `parseBudgetAmount` / dated `addExpense` rules with exact messages.
   - The "Current screen" section.
   - Testing table rows for the four new test files.
-- Persistence slice (D1, seam above), including a `BudgetStore` rule in `cmake/CheckLayering.cmake`.
+- Persistence slice (D1, seam above), including a `BudgetStore` rule in `tests/CheckLayering.cmake`.
 - Extend the layering rules whenever a new `src/` file is added.
 
 ## Approval Checklist
@@ -433,7 +434,7 @@ Branch: `huy/mvc-mvp` (local only; no upstream set). Base commit: `ed49eb0` (ori
 |---|------|------|-------|--------------------|--------|-----------|-----------|--------|
 | 1 | Model tests (update, parse, dated expenses) | team-test-author | sonnet | tests/test_budget_update.cpp, tests/test_budget_amount_text.cpp, tests/test_expense_records.cpp | failing tests | DW1 | – | pending |
 | 2 | Controller tests with fake display | team-test-author | sonnet | tests/test_budget_controller.cpp | failing tests | DW2 | – | pending |
-| 3 | Layering check | team-test-author | sonnet | cmake/CheckLayering.cmake | check that fails on today's tree | DW3 | – | pending |
+| 3 | Layering check | team-test-author | sonnet | tests/CheckLayering.cmake | check that fails on today's tree | DW3 | – | pending |
 | 4 | CMake targets + layering test | team-implementer | opus | CMakeLists.txt | build config | DW4 | 3 | pending |
 | 5 | Model additions | team-implementer | opus | src/BudgetModel.h, src/BudgetModel.cpp | code | DW5 | 1, 4 | pending |
 | 6 | BudgetDisplay.h + controller | team-implementer | opus | src/BudgetDisplay.h, src/BudgetController.h, src/BudgetController.cpp | code | DW6 | 2, 3, 5 | pending |
