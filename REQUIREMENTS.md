@@ -90,12 +90,12 @@ The walking skeleton proves the full path from the Qt user interface through the
 | Requirement | Status |
 | --- | --- |
 | Enter a budget amount | Done in the GUI. The skeleton also stores a category and date range for each budget. |
-| Update the budget amount | Not started |
+| Update the budget amount | Done in the GUI: select a budget and enter a new amount. |
 | Reject invalid budget input with a message | Done: negative amounts, missing dates, end date before start date, and blank categories |
-| Record an expense amount | Done in the model; the GUI has no expense form yet |
-| Choose an expense date | Not started |
+| Record an expense amount | Done in the GUI |
+| Choose an expense date | Done. The date defaults to today and can be changed. |
 | Show total budget | Done |
-| Show total spending and remaining budget | Done in the model; not shown in the GUI yet |
-| Show a list of expenses | Not started |
+| Show total spending and remaining budget | Done. A negative remaining amount shows a minus sign. |
+| Show a list of expenses | Done. Expenses show newest first with date and amount. |
 | Keep data after the app closes | Not started. Data is held in memory for the current session. |
 | Show a daily amount for each budget | Done (from the later daily-limit requirement) |

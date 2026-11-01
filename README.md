@@ -1,16 +1,17 @@
 # SCU Student Budget MVP
 
-A native Qt Widgets and C++ walking skeleton for CSCI 187, built on the [course project template](https://github.com/jadekandel/CSCI-187-Template). Students can enter a budget amount, date range, and spending category, then view the combined total and the daily amount for each budget.
+A native Qt Widgets and C++ walking skeleton for CSCI 187, built on the [course project template](https://github.com/jadekandel/CSCI-187-Template). Students can enter a budget amount, date range, and spending category, log expenses with a date, then view total budget, total spending, remaining budget, and a list of expenses.
 
 ## Requirements covered
 
-- Set an initial amount, start date, end date, and category for each budget.
+- Set an initial amount, start date, end date, and category for each budget, and update a budget's amount later.
 - View the combined budget total and each budget's amount per day.
 - View categories in the budget list.
 - Reject negative amounts and end dates before start dates in the model.
-- Record expense amounts in the model and calculate total spending and remaining budget.
+- Record expenses with an amount and a date (today by default) in the GUI.
+- View total spending, remaining budget (negative when overspent), and a newest-first list of expenses.
 
-The daily amount includes both the start and end dates. Budgets and spending totals are stored in memory for the current app session. The GUI currently provides budget entry; expense entry is available through the model API. Expense-entry screens, meal-plan balance imports, persistence, and charts are later increments.
+The daily amount includes both the start and end dates. Budgets and spending totals are stored in memory for the current app session. The GUI provides budget entry and update, expense entry, the totals, and the expense list. Amounts are typed as dollar text, and the model validates them. Meal-plan balance imports, persistence, and charts are later increments.
 
 ## Build and run
 
@@ -52,5 +53,10 @@ Tests use the vendored doctest header. Each new test file should include `doctes
 
 - `src/BudgetModel.*`: stores budgets, validates rules, and calculates totals. It has no dependency on the view or controller.
 - `src/DecimalCents.*`: preserves fractional cents with exact decimal arithmetic.
-- `src/BudgetController.*`: receives requests from the view and mediates access to the model.
-- `src/BudgetView.*`: Qt Widgets form and budget table.
+- `src/BudgetController.*`: receives requests from the view as raw text and dates, calls the model, formats money and dates as strings, and pushes the result to the display.
+- `src/BudgetDisplay.h`: the abstract interface the controller uses to show a screen or a message. It holds only view-ready strings.
+- `src/BudgetView.*`: Qt Widgets forms and tables. It implements `BudgetDisplay`.
+- `src/main.cpp`: creates the model, controller, and view and connects them.
+- `tests/CheckLayering.cmake`: the layering check that `ctest` runs as the `layering` test.
+
+The layers follow strict MVC. The model knows nothing about the controller or the view. The view calls only the controller and cannot include the model's headers, so it never sees model types. The controller mediates between them and updates the view through `BudgetDisplay`. CMake builds the model and controller as libraries that do not link Qt Widgets, and `CheckLayering.cmake` fails the `layering` test if a source file includes a header it should not, such as a Widgets header in the model or `BudgetModel.h` in the view.
