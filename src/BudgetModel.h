@@ -7,6 +7,7 @@
 #include <QVector>
 
 #include <cstddef>
+#include <optional>
 #include <type_traits>
 
 struct Budget {
@@ -18,32 +19,58 @@ struct Budget {
     double amountPerDay() const;
 };
 
+struct Expense {
+    DecimalCents amountCents;  // exact, may hold a fraction of a cent
+    QDate date;
+};
+
 class BudgetModel {
 public:
     bool addBudget(const Budget &budget, QString *error = nullptr);
     const QVector<Budget> &budgets() const { return budgets_; }
     qint64 totalCents() const;
+    bool updateBudgetAmount(qsizetype index, qint64 amountCents, QString *error = nullptr);
+    // Typed budget text becomes whole cents here so no caller needs a double.
+    static std::optional<qint64> parseBudgetAmount(const QString &amountDollars,
+                                                   QString *error = nullptr);
+
     // Dollar text avoids precision already lost by upstream floating-point math.
     bool addExpense(const QString &amountDollars, QString *error = nullptr);
     bool addExpense(const char *amountDollars, QString *error = nullptr);
     bool addExpense(std::nullptr_t, QString *error = nullptr);
+    // The overloads above record today's date; these record the given one.
+    bool addExpense(const QString &amountDollars, const QDate &date, QString *error = nullptr);
+    bool addExpense(const char *amountDollars, const QDate &date, QString *error = nullptr);
+    bool addExpense(std::nullptr_t, const QDate &date, QString *error = nullptr);
 
+private:
+    template <typename Amount>
+    static constexpr bool isNonTextAmount =
+        !std::is_same_v<std::decay_t<Amount>, QString> &&
+        !std::is_convertible_v<std::decay_t<Amount>, const char *> &&
+        !std::is_same_v<std::decay_t<Amount>, std::nullptr_t>;
+
+public:
     // Reject numeric inputs before an implicit conversion can lose precision or units.
-    template <typename Amount,
-              std::enable_if_t<!std::is_same_v<std::decay_t<Amount>, QString> &&
-                                   !std::is_convertible_v<std::decay_t<Amount>, const char *> &&
-                                   !std::is_same_v<std::decay_t<Amount>, std::nullptr_t>, int> = 0>
-    bool addExpense(const Amount &, QString *error = nullptr) {
+    template <typename Amount, std::enable_if_t<isNonTextAmount<Amount>, int> = 0>
+    bool addExpense(const Amount &amount, QString *error = nullptr) {
+        return addExpense(amount, QDate::currentDate(), error);
+    }
+
+    template <typename Amount, std::enable_if_t<isNonTextAmount<Amount>, int> = 0>
+    bool addExpense(const Amount &, const QDate &, QString *error = nullptr) {
         if (error) *error = QStringLiteral("Enter the expense as decimal text in dollars.");
         return false;
     }
 
+    const QVector<Expense> &expenses() const { return expenses_; }  // entry order
     const DecimalCents &totalSpendingCents() const { return spendingCents_; }
     DecimalCents remainingBudgetCents() const;
 
 private:
     // Only validated text can reach the exact cents accumulator.
-    bool addExpenseCents(const DecimalCents &amountCents, QString *error);
+    bool addExpenseCents(const DecimalCents &amountCents, const QDate &date, QString *error);
     QVector<Budget> budgets_;
+    QVector<Expense> expenses_;
     DecimalCents spendingCents_;
 };
