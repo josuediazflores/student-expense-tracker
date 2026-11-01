@@ -450,3 +450,60 @@ Branch: `huy/mvc-mvp` (local only; no upstream set). Base commit: `ed49eb0` (ori
 - 2026-11-01 T7–T8: done (2539470, a534bde). The full build is clean and ctest passes 2/2. The offscreen smoke is BLOCKED BY ENVIRONMENT: `dyld: Library not loaded: /usr/lib/libhvf.dylib`, referenced from Homebrew freetype 2.15.0 on macOS 15.0. A 5-line Qt Widgets program crashes the same way, so this is not this code.
 - 2026-11-01 T9: the verifier ran a clean configure and build in /tmp, then ctest (100% of 2) and doctest (218/1819, 0 failed). `nm -u` shows 0 QWidget references in libbudget_model.a and libbudget_controller.a. The verifier's read-only role guard blocked the mutation probes, and so did a test-author re-run. The guards were not widened; the probes were later run by the trial falsifier on /tmp copies.
 - 2026-11-01 Review: team-reviewer APPROVE with 1 MINOR. "Update selected budget" used `currentRow()`, which can update a budget the user never selected; fixed in 808d5f9 along with the REQUIREMENTS row nit. clean-check: CLEAN, 0 BLOCKER and 2 SHOULD (R3: repeated `reject` lambdas and repeated message strings in BudgetModel.cpp). These were left as optional; part of the duplication is teammates' existing code. Security (diff): `security:pass`. gitleaks found no leaks across 9 commits, no new packages, semgrep p/c returned 0 results, and the LLM review found nothing.
+
+## Trial (round 1)
+
+2026-11-01, base `ed49eb0`, HEAD `793ef10`. **Verdict: REJECT.** The judge ruled 15 requirements MET. It ruled one FAILED: MVP Req 3's last bullet, "The user's saved budget and spending entries remain available after closing and reopening the application". The request says to take MVP scope from the docs and implement it, and D1 cut this requirement without Huy's sign-off. Nothing was faked: the integrity scan found 0 flags; 12 of 12 falsifier mutations and 8 of 8 advocate mutations were caught; 14 of 14 falsifier layering probes and 6 of 6 judge layering probes were caught; and a real-widget offscreen harness passed 19 of 19 checks. Claims audit: claims 1–13 BACKED. Claim 14 (security) was partly backed: the judge re-ran gitleaks, but not semgrep or the LLM review.
+
+## Part 2: Persistence slice (added after trial round 1)
+
+- **D13 (CTO, reverses D1).** Persistence is built in this branch. Why: it is MVP in the course docs, and the request asked for the MVP. The plan's own seam is used, so the Model still knows nothing about storage.
+
+### Contract
+
+- **`src/BudgetStore.h/.cpp`**, new static library `budget_store`, linked to `budget_model` + Qt6::Core + Qt6::Sql (no Widgets).
+  - `explicit BudgetStore(const QString &databasePath);` with a unique SQLite connection name per instance; the destructor closes and removes the connection.
+  - `bool load(BudgetModel &model, QString *error = nullptr);`
+    - It creates the tables if they are missing; a missing file loads as an empty model.
+    - It replays the rows into a fresh local `BudgetModel` through the public validated API: `addBudget`, then `addExpense(dollarText, date)`, in stored position order. Only if every row is accepted does it assign the result to `model`.
+    - Any SQL failure or rejected row returns false, sets `error`, and leaves `model` unchanged.
+  - `bool save(const BudgetModel &model, QString *error = nullptr);` rewrites both tables inside one transaction. On failure it rolls back and returns false with `error`.
+  - **Schema** (`PRAGMA user_version = 1`):
+    - `budgets(position INTEGER NOT NULL, category TEXT NOT NULL, amount_cents INTEGER NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL)`
+    - `expenses(position INTEGER NOT NULL, amount_dollars TEXT NOT NULL, date TEXT NOT NULL)`
+    - Dates are ISO `yyyy-MM-dd`.
+    - Expense amounts are exact dollar text made from `DecimalCents` by shifting the decimal point (`fromDecimal(cents + "e-2")`), so `1234.5` cents is stored as `"12.345"`. No `double` anywhere.
+  - It must not include Controller, View, Display or any Widgets/Gui header. The Model must not include `BudgetStore.h`.
+- **Controller additions:**
+  - `void setStore(BudgetStore *store);` is non-owning, nullable, and forward-declared in BudgetController.h.
+  - `bool loadSaved();`
+    - With no store it returns true and does nothing.
+    - Otherwise it calls `store->load(model_)`. On success it pushes `showScreen`; there is no message.
+    - On failure it shows `showMessage("Saved data could not be loaded: " + error, true)` and returns false. The model is unchanged.
+  - After every successful action, if a store is set, the controller calls `store->save(model_)`.
+    - If the save succeeds, the screen and the success message are pushed as before.
+    - If the save fails, the action still returns true and the screen is still pushed. The message becomes `("Your change was not saved: " + error, true)`.
+  - Failed actions never save.
+- **`main.cpp`:**
+  - It calls `QCoreApplication::setApplicationName("SCU Student Budget")`.
+  - Path: `QStandardPaths::writableLocation(AppDataLocation)`, created with `QDir().mkpath`, plus `/budget.sqlite`.
+  - Wiring order: `BudgetStore store(path)`, `controller.setStore(&store)`, `controller.setDisplay(&view)`, `controller.loadSaved()`.
+  - The store must outlive the controller's last call, so declare it before the controller.
+- **CMake:**
+  - Add `budget_store`.
+  - `budget_controller` links `budget_store`.
+  - `app` links `budget_controller` + Widgets.
+  - `test_build` links `budget_controller` + Qt6::Core + Qt6::Sql, still no Widgets.
+- **Layering check additions** (in `tests/CheckLayering.cmake`, owned by the test author):
+  - `src/BudgetStore.h/.cpp` are banned from `BudgetController`, `BudgetView`, `BudgetDisplay`, GUI headers and SIGNALS.
+  - Model files are also banned from `BudgetStore.h`.
+  - View files are also banned from `BudgetStore.h`, because the View only calls the Controller.
+  - `BudgetController.h` is banned from `BudgetStore.h` (forward declaration only).
+  - A missing `src/BudgetStore.h` counts as a violation.
+
+### Tasks
+
+| # | Task | Role | Model | Files it may touch | Done when | Status |
+|---|------|------|-------|--------------------|-----------|--------|
+| 10 | Failing store round-trip tests, controller persistence tests, layering rules for BudgetStore | team-test-author | sonnet | tests/test_budget_store.cpp, tests/test_controller_persistence.cpp, tests/CheckLayering.cmake | new tests fail only for the missing BudgetStore API; layering check fails only on the missing BudgetStore.h; existing tests untouched | pending |
+| 11 | BudgetStore + CMake + controller store wiring + main | team-implementer | opus | src/BudgetStore.h, src/BudgetStore.cpp, CMakeLists.txt, src/BudgetController.h, src/BudgetController.cpp, src/main.cpp, README.md, REQUIREMENTS.md | full build clean; ctest 100%; `otool -L test_build` has no QtWidgets; persistence row in REQUIREMENTS.md marked Done | pending |
