@@ -1,0 +1,33 @@
+#pragma once
+
+#include <QString>
+#include <QVector>
+
+// View-ready text only, so a display never needs a Model type to draw the screen.
+struct BudgetRow {
+    QString category;
+    QString total;
+    QString period;
+    QString perDay;
+};
+
+struct ExpenseRow {
+    QString date;
+    QString amount;
+};
+
+struct BudgetScreen {
+    QString totalBudget;
+    QString totalSpending;
+    QString remaining;
+    QVector<BudgetRow> budgets;
+    QVector<ExpenseRow> expenses;  // newest first
+};
+
+// The controller pushes updates through this interface; the Model never sees it.
+class BudgetDisplay {
+public:
+    virtual ~BudgetDisplay() = default;
+    virtual void showScreen(const BudgetScreen &screen) = 0;
+    virtual void showMessage(const QString &text, bool isError) = 0;
+};
