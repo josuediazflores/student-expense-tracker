@@ -17,6 +17,7 @@ namespace {
 const QString kBlocked =
     QStringLiteral("Saved data could not be loaded, so changes are not being saved.");
 const QString kNewer = QStringLiteral("Saved data is from a newer version.");
+const QString kLocked = QStringLiteral("The budget is already open in another window.");
 
 // Two budgets (the later-sorting name first) and two expenses (the newer date first), so
 // order bugs show up. 12.345 dollars is 1234.5 cents: a fraction of a cent.
@@ -168,12 +169,14 @@ TEST_CASE("a smaller model saved over a larger one leaves only the smaller one")
     TempDir tmp;
     saveFilled(tmp.path());
 
-    BudgetStore store(tmp.path());
-    BudgetModel model;
-    REQUIRE(store.load(model));
-    BudgetModel smaller;
-    REQUIRE(smaller.addBudget({"Only", 100, QDate(2026, 5, 1), QDate(2026, 5, 2)}));
-    REQUIRE(store.save(smaller));
+    {
+        BudgetStore store(tmp.path());
+        BudgetModel model;
+        REQUIRE(store.load(model));
+        BudgetModel smaller;
+        REQUIRE(smaller.addBudget({"Only", 100, QDate(2026, 5, 1), QDate(2026, 5, 2)}));
+        REQUIRE(store.save(smaller));
+    }
 
     BudgetStore reader(tmp.path());
     BudgetModel loaded;
@@ -255,14 +258,16 @@ TEST_CASE("a missing file loads as an empty model and succeeds") {
 
 TEST_CASE("after loading a missing file, saving works") {
     TempDir tmp;
-    BudgetStore store(tmp.path());
-    BudgetModel model;
-    REQUIRE(store.load(model));
-    fillModel(model);
+    {
+        BudgetStore store(tmp.path());
+        BudgetModel model;
+        REQUIRE(store.load(model));
+        fillModel(model);
 
-    QString error;
-    CHECK(store.save(model, &error));
-    CHECK(error.isEmpty());
+        QString error;
+        CHECK(store.save(model, &error));
+        CHECK(error.isEmpty());
+    }
 
     BudgetStore reader(tmp.path());
     BudgetModel loaded;
@@ -489,18 +494,20 @@ TEST_CASE("stores on different files in one process do not interfere") {
 
 TEST_CASE("a store keeps working after another store is destroyed") {
     TempDir tmp;
-    BudgetStore survivor(tmp.path("survivor.sqlite"));
-    BudgetModel model;
-    REQUIRE(survivor.load(model));
     {
-        BudgetStore shortLived(tmp.path("short.sqlite"));
-        BudgetModel other;
-        REQUIRE(shortLived.load(other));
-        REQUIRE(shortLived.save(other));
-    }
-    fillModel(model);
+        BudgetStore survivor(tmp.path("survivor.sqlite"));
+        BudgetModel model;
+        REQUIRE(survivor.load(model));
+        {
+            BudgetStore shortLived(tmp.path("short.sqlite"));
+            BudgetModel other;
+            REQUIRE(shortLived.load(other));
+            REQUIRE(shortLived.save(other));
+        }
+        fillModel(model);
 
-    CHECK(survivor.save(model));
+        CHECK(survivor.save(model));
+    }
 
     BudgetStore reader(tmp.path("survivor.sqlite"));
     BudgetModel loaded;
@@ -521,4 +528,65 @@ TEST_CASE("a load blocked on one store does not block another store's save") {
 
     CHECK(good.save(goodModel));
     CHECK_FALSE(bad.save(goodModel));
+}
+
+// ---- One window per file (D14) -------------------------------------------------------
+
+TEST_CASE("a second store on a file that is already open fails to load with the lock message") {
+    TempDir tmp;
+    BudgetStore first(tmp.path());
+    BudgetModel firstModel;
+    REQUIRE(first.load(firstModel));
+    fillModel(firstModel);
+    REQUIRE(first.save(firstModel));
+
+    BudgetStore second(tmp.path());
+    BudgetModel secondModel;
+    QString error;
+    CHECK_FALSE(second.load(secondModel, &error));
+    CHECK(error == kLocked);
+    CHECK(secondModel.budgets().isEmpty());
+    CHECK(secondModel.expenses().isEmpty());
+}
+
+TEST_CASE("a store refused by the lock cannot save and the first store's rows stay intact") {
+    TempDir tmp;
+    BudgetStore first(tmp.path());
+    BudgetModel firstModel;
+    REQUIRE(first.load(firstModel));
+    fillModel(firstModel);
+    REQUIRE(first.save(firstModel));
+
+    BudgetStore second(tmp.path());
+    BudgetModel secondModel;
+    CHECK_FALSE(second.load(secondModel));
+    // The second window's student keeps entering data on a blank screen.
+    REQUIRE(secondModel.addBudget({"Intruder", 1, QDate(2026, 7, 1), QDate(2026, 7, 2)}));
+    QString error;
+    CHECK_FALSE(second.save(secondModel, &error));
+    CHECK(error == kBlocked);
+
+    CHECK(rawInt(tmp.path(), "SELECT COUNT(*) FROM budgets") == 2);
+    CHECK(rawInt(tmp.path(), "SELECT COUNT(*) FROM expenses") == 2);
+    CHECK(rawInt(tmp.path(), "SELECT COUNT(*) FROM budgets WHERE category = 'Intruder'") == 0);
+    CHECK(rawInt(tmp.path(), "SELECT COUNT(*) FROM budgets WHERE category = 'Zebra'") == 1);
+}
+
+TEST_CASE("the lock is released when the first store is destroyed") {
+    TempDir tmp;
+    {
+        BudgetStore first(tmp.path());
+        BudgetModel model;
+        REQUIRE(first.load(model));
+        fillModel(model);
+        REQUIRE(first.save(model));
+    }
+
+    BudgetStore next(tmp.path());
+    BudgetModel loaded;
+    QString error;
+    CHECK(next.load(loaded, &error));
+
+    CHECK(error.isEmpty());
+    checkFilled(loaded);
 }

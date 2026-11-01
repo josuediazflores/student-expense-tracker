@@ -6,28 +6,14 @@
 #include "BudgetController.h"
 #include "BudgetDisplay.h"
 #include "BudgetModel.h"
+#include "persistence_test_support.h"
 
 #include <utility>
 #include <vector>
 
+using persistence_test::FakeDisplay;
+
 namespace {
-// Records everything the controller pushes, in order.
-class FakeDisplay : public BudgetDisplay {
-public:
-    void showScreen(const BudgetScreen &screen) override {
-        screens.push_back(screen);
-        events.push_back('S');
-    }
-    void showMessage(const QString &text, bool isError) override {
-        messages.emplace_back(text, isError);
-        events.push_back('M');
-    }
-
-    std::vector<BudgetScreen> screens;
-    std::vector<std::pair<QString, bool>> messages;
-    std::vector<char> events;  // 'S' for a screen, 'M' for a message, in call order
-};
-
 bool sameScreen(const BudgetScreen &a, const BudgetScreen &b) {
     if (a.totalBudget != b.totalBudget || a.totalSpending != b.totalSpending ||
         a.remaining != b.remaining || a.budgets.size() != b.budgets.size() ||

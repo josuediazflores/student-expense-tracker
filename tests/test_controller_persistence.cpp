@@ -9,6 +9,7 @@
 #include "BudgetStore.h"
 #include "persistence_test_support.h"
 
+#include <memory>
 #include <vector>
 
 using namespace persistence_test;
@@ -18,21 +19,29 @@ const QString kBlocked =
     QStringLiteral("Saved data could not be loaded, so changes are not being saved.");
 const QString kNotSaved = QStringLiteral("Your change was not saved: ");
 const QString kLoadFailed = QStringLiteral("Saved data could not be loaded: ");
+const QString kLocked = QStringLiteral("The budget is already open in another window.");
 const QDate kJan1(2026, 1, 1);
 const QDate kJan31(2026, 1, 31);
 
 // The app's wiring order: store first, then the display, then loadSaved().
 struct App {
     TempDir tmp;
-    BudgetStore store{tmp.path()};
+    std::unique_ptr<BudgetStore> store = std::make_unique<BudgetStore>(tmp.path());
     BudgetModel model;
     BudgetController controller{model};
     FakeDisplay display;
 
     App() {
-        controller.setStore(&store);
+        controller.setStore(store.get());
         controller.setDisplay(&display);
         REQUIRE(controller.loadSaved());
+    }
+
+    // Ends this app's hold on the file (the store's lock), as closing its window would, so
+    // a test can open the same file again.
+    void closeStore() {
+        controller.setStore(nullptr);
+        store.reset();
     }
 };
 
@@ -67,6 +76,7 @@ TEST_CASE("creating a budget saves it so a reopened app has it") {
     App app;
 
     REQUIRE(app.controller.createBudget("Groceries", "250.00", kJan1, kJan31));
+    app.closeStore();
 
     const BudgetModel reopened = reopen(app.tmp.path());
     REQUIRE(reopened.budgets().size() == 1);
@@ -81,6 +91,7 @@ TEST_CASE("adding an expense saves its exact amount and date") {
     REQUIRE(app.controller.createBudget("Food", "100", kJan1, kJan31));
 
     REQUIRE(app.controller.addExpense("12.345", QDate(2026, 1, 9)));
+    app.closeStore();
 
     const BudgetModel reopened = reopen(app.tmp.path());
     REQUIRE(reopened.expenses().size() == 1);
@@ -95,6 +106,7 @@ TEST_CASE("updating a budget amount saves the new amount") {
     REQUIRE(app.controller.createBudget("Fun", "50", kJan1, kJan31));
 
     REQUIRE(app.controller.updateBudgetAmount(0, "300"));
+    app.closeStore();
 
     const BudgetModel reopened = reopen(app.tmp.path());
     REQUIRE(reopened.budgets().size() == 2);
@@ -108,6 +120,8 @@ TEST_CASE("a reopened controller shows the same screen the first one ended with"
     REQUIRE(first.controller.createBudget("Apple", "20", kJan1, kJan31));
     REQUIRE(first.controller.addExpense("12.345", QDate(2026, 1, 9)));
     REQUIRE(first.controller.addExpense("1", QDate(2026, 1, 3)));
+    const BudgetScreen expected = first.controller.screen();
+    first.closeStore();
 
     BudgetStore store(first.tmp.path());
     BudgetModel model;
@@ -117,7 +131,6 @@ TEST_CASE("a reopened controller shows the same screen the first one ended with"
     controller.setDisplay(&display);
     REQUIRE(controller.loadSaved());
 
-    const BudgetScreen expected = first.controller.screen();
     const BudgetScreen actual = controller.screen();
     CHECK(actual.totalBudget == expected.totalBudget);
     CHECK(actual.totalSpending == QStringLiteral("$13.345"));
@@ -146,13 +159,15 @@ TEST_CASE("a successful action with a store still shows the screen then the succ
 
 TEST_CASE("actions are saved even when no display is attached") {
     TempDir tmp;
-    BudgetStore store(tmp.path());
-    BudgetModel model;
-    BudgetController controller(model);
-    controller.setStore(&store);
-    REQUIRE(controller.loadSaved());
+    {
+        BudgetStore store(tmp.path());
+        BudgetModel model;
+        BudgetController controller(model);
+        controller.setStore(&store);
+        REQUIRE(controller.loadSaved());
 
-    CHECK(controller.createBudget("Food", "100", kJan1, kJan31));
+        CHECK(controller.createBudget("Food", "100", kJan1, kJan31));
+    }
 
     const BudgetModel reopened = reopen(tmp.path());
     REQUIRE(reopened.budgets().size() == 1);
@@ -415,4 +430,31 @@ TEST_CASE("a failed expense save reports the not-saved error too") {
     REQUIRE(app.display.messages.size() == 1);
     CHECK(app.display.messages.at(0).second == true);
     CHECK(app.display.messages.at(0).first.startsWith(kNotSaved));
+}
+
+// ---- One window per file (D14) -------------------------------------------------------
+
+TEST_CASE("loadSaved in a second window fails with the lock message and cannot overwrite the file") {
+    App app;
+    REQUIRE(app.controller.createBudget("Food", "100", kJan1, kJan31));
+
+    BudgetStore secondStore(app.tmp.path());
+    BudgetModel secondModel;
+    BudgetController secondController(secondModel);
+    FakeDisplay secondDisplay;
+    secondController.setStore(&secondStore);
+    secondController.setDisplay(&secondDisplay);
+
+    CHECK_FALSE(secondController.loadSaved());
+
+    REQUIRE(secondDisplay.messages.size() == 1);
+    CHECK(secondDisplay.messages.at(0).second == true);
+    CHECK(secondDisplay.messages.at(0).first.startsWith(kLoadFailed));
+    CHECK(secondDisplay.messages.at(0).first.contains(kLocked));
+    CHECK(secondModel.budgets().isEmpty());
+
+    // The second window's student keeps going; nothing they do may reach the file.
+    secondController.createBudget("Intruder", "5", kJan1, kJan31);
+    CHECK(rawInt(app.tmp.path(), "SELECT COUNT(*) FROM budgets") == 1);
+    CHECK(rawInt(app.tmp.path(), "SELECT COUNT(*) FROM budgets WHERE category = 'Food'") == 1);
 }
