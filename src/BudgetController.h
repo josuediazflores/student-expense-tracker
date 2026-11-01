@@ -26,7 +26,8 @@ public:
     // to do, the request is kept, and this returns false.
     bool createBudget(const QString &category, const QString &amountText,
                       const QDate &startDate, const QDate &endDate);
-    // Carries out the answer to the last question; false if nothing was pending.
+    // Carries out the answer to the last question. True when the choice was carried out;
+    // false when nothing was pending or the update was rejected.
     bool resolveBudgetConflict(ConflictChoice choice);
     bool updateBudgetAmount(int row, const QString &amountText);
     bool addExpense(const QString &amountText, const QDate &date,

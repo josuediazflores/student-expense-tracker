@@ -4,6 +4,7 @@
 #include "DecimalCents.h"
 
 #include <QDate>
+#include <QDateTime>
 #include <QFile>
 #include <QSqlDatabase>
 #include <QSqlError>
@@ -77,20 +78,36 @@ bool createSchema(QSqlDatabase &db, QString *error) {
     });
 }
 
+// The first free backup name: the plain one, else one stamped with the time, else that
+// with a counter, so an existing file (even an empty one from a crash) is never replaced.
+QString freeBackupName(const QString &databasePath) {
+    const QString plain = databasePath + QStringLiteral(".v1-backup.sqlite");
+    if (!QFile::exists(plain)) return plain;
+    const QString stamped =
+        databasePath + QStringLiteral(".v1-backup-") +
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    QString candidate = stamped + QStringLiteral(".sqlite");
+    for (int counter = 2; QFile::exists(candidate); ++counter)
+        candidate = stamped + QStringLiteral("-%1.sqlite").arg(counter);
+    return candidate;
+}
+
 // The upgrade is one-way and older builds refuse a version 2 file, so a version 1 copy is
-// kept as the way back. An existing backup is the oldest copy and is never replaced.
+// kept as the way back. The copy is written to a .tmp file and renamed, so a crash can never
+// leave a half-written file at a real backup name.
 bool backUpVersion1(QSqlDatabase &db, QString *error) {
-    const QString backup = db.databaseName() + QStringLiteral(".v1-backup.sqlite");
-    if (QFile::exists(backup)) return true;
+    const QString backup = freeBackupName(db.databaseName());
+    const QString temp = backup + QStringLiteral(".tmp");
+    // A leftover from an earlier crash; VACUUM INTO refuses to write over an existing file.
+    QFile::remove(temp);
     QSqlQuery query(db);
     if (query.prepare(QStringLiteral("VACUUM INTO ?"))) {
-        query.bindValue(0, backup);
-        if (query.exec()) return true;
+        query.bindValue(0, temp);
+        if (query.exec() && QFile::rename(temp, backup)) return true;
     }
     fail(error, QStringLiteral("A backup of the saved data could not be made: ") +
                     query.lastError().text());
-    // A partial copy would stop every later load from making a real one.
-    QFile::remove(backup);
+    QFile::remove(temp);
     return false;
 }
 
