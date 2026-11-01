@@ -96,7 +96,8 @@ The walking skeleton proves the full path from the Qt user interface through the
 | Choose an expense date | Done. The date defaults to today and can be changed. |
 | Show total budget | Done |
 | Show total spending and remaining budget | Done. A negative remaining amount shows a minus sign. |
-| Show a list of expenses | Done. Expenses show newest first with date and amount. |
+| Show a list of expenses | Done. Expenses show newest first with date, amount and category. |
 | Keep data after the app closes | Done. Budgets and expenses are saved to a SQLite file named `budget.sqlite` after every successful change and loaded when the app starts. The file is in the per-user app data folder, for example `~/Library/Application Support/SCU Student Budget/` on macOS. |
 | Show a daily amount for each budget | Done (from the later daily-limit requirement) |
-| Pick a category for each expense | Done in the GUI. The expense list shows the category, and adding a duplicate budget for a category asks whether to update the existing one. |
+| Pick a category for each expense | Done in the GUI. The expense list shows the category. |
+| Prevent a second budget for the same category and dates | Done. Adding a budget that clashes with an existing one asks whether to update the existing budget, choose another category, or cancel. |
