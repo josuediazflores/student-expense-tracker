@@ -552,3 +552,46 @@ Fixing now (round 2 of 2):
 Left as optional (with reasons):
 - The SHOULDs would touch teammates' existing code or are naming only.
 - The data LOWs are safe as they stand: saving stays blocked and the first error is reported.
+
+## Trial (round 2)
+
+2026-11-01, base `ed49eb0`, HEAD `649273d`. **Verdict: ACCEPT.**
+
+The judge ruled 12 requirements MET. Number 13, the final report, was UNSETTLED because that report comes after the verdict.
+- The judge rebuilt the branch and ran 4 of its own mutation probes, all caught: an include in the Model, an update that always edits row 0, stored amounts rounded to 2 decimals, and the last expense write dropped.
+- It reran the falsifier's offscreen harness on the real View, Controller, Model and Store, with the data folder moved to /tmp. Every MVP flow held, including a restart: $412.505 survived a reopen. A second window is refused, and the file stays intact.
+- The integrity flag (COMPUTED_EXPECTED at tests/test_controller_persistence.cpp:123) was ruled BENIGN, because the same test also checks fixed values.
+- Claims audit: claims 1–11 BACKED. Claim 12: gitleaks and semgrep were re-run and are BACKED; the LLM security finding is recorded only here.
+- Recommended before Huy pushes: answer Open Question 3; REQUIRE the row count at tests/test_controller_persistence.cpp:418; treat the first Ubuntu CI run as the real check against apt's older Qt.
+
+## Final check (CTO, 2026-11-01)
+
+Fresh configure and build in a /tmp build directory.
+- Build: 0 warnings or errors.
+- `ctest`: 100% of 2 tests passed (`test_build`, `layering`).
+- doctest: 269 test cases and 2364 assertions, 0 failed.
+- `otool -L test_build`: QtSql and QtCore only.
+- Layering check: passed.
+- Changes from `ed49eb0`: 22 files changed. No existing test file was modified (only added). 21 local commits, with no upstream.
+
+## Retro
+
+- **Agents spawned (about 30):**
+  - Planning: architect 1.
+  - Tests: test-author 6, including 2 re-dispatches caused by role guards.
+  - Building: implementer 6.
+  - Checking: verifier 1, reviewer 2, clean-code 2, data engineer 3, security reviewer 7 (find and filter passes).
+  - Trial: falsifier 2, advocate 2, judge 2.
+- **Fix rounds used:** 2 of 2.
+  - Round 1: build persistence after trial REJECT.
+  - Round 2: the single-instance lock (data HIGH) and the duplicated test helper (clean-check BLOCKER).
+- **What went wrong:**
+  - I cut an MVP requirement (persistence) on my own judgement. The trial rejected the cut, which was right: the request said to take scope from the docs.
+  - The role guards blocked the planned `cmake/` location and the read-only roles' mutation probes. In the end only the falsifier and judge could run probes.
+  - Each test-author missed one store-lifetime case, which the implementer caught.
+  - The app GUI cannot launch on this Mac (Homebrew freetype linked to a missing /usr/lib/libhvf.dylib). The GUI evidence comes from the falsifier's harness with a /tmp freetype workaround.
+- **What I'd brief differently next time:**
+  - Never cut a requirement that the docs mark MVP without asking.
+  - Put checks under `tests/` from the start.
+  - Give the test-author an explicit "no two live stores on one path" rule.
+  - Plan mutation probes for the falsifier rather than for the verifier.
