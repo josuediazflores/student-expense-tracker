@@ -6,24 +6,35 @@
 
 class QComboBox;
 class QDateEdit;
-class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QTableWidget;
 
-class BudgetView : public QWidget {
+// Draws the screens the controller pushes and forwards raw input to it. It holds no
+// business rules and sees no Model types.
+class BudgetView : public QWidget, public BudgetDisplay {
 public:
     explicit BudgetView(BudgetController &controller, QWidget *parent = nullptr);
 
+    void showScreen(const BudgetScreen &screen) override;
+    void showMessage(const QString &text, bool isError) override;
+
 private:
     void saveBudget();
-    void refresh();
+    void updateSelectedBudget();
+    void saveExpense();
 
     BudgetController &controller_;
     QComboBox *category_;
-    QDoubleSpinBox *amount_;
+    QLineEdit *budgetAmount_;
     QDateEdit *startDate_;
     QDateEdit *endDate_;
-    QLabel *total_;
+    QLineEdit *expenseAmount_;
+    QDateEdit *expenseDate_;
+    QLabel *totalBudget_;
+    QLabel *totalSpending_;
+    QLabel *remaining_;
     QLabel *feedback_;
-    QTableWidget *table_;
+    QTableWidget *budgetsTable_;
+    QTableWidget *expensesTable_;
 };
