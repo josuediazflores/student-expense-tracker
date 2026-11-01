@@ -28,6 +28,8 @@ Received 2026-11-01 (relayed brief that quotes Huy's goal and his course's archi
 
 GO WITH CHANGES. The proposal is right: the skeleton's include direction is correct, but the Controller exposes nothing about expenses, the View reaches into Model types (`Budget`, and calls `Budget::amountPerDay()`, a Model method, directly), and money goes through a `double`. Changes from the literal MVP: persistence (MVP requirement 3, last bullet) is left out of this slice and only its seam is designed (D1), and the skeleton's category budgets are kept rather than collapsed to one overall budget (D2), so teammates' tests stay untouched. Branch `huy/mvc-mvp` is cut from `origin/main` (ed49eb0), not from `huy/spec-decimal-cents`: that branch only changes SPECIFICATIONS.md (open PR #7), and the code does not need it. Local `main` is one commit behind `origin/main`, so `origin/main` is the base.
 
+> **Superseded in part (2026-11-01, after trial round 1):** persistence is no longer cut. D13 reverses D1, and persistence is built in this branch (see `## Part 2: Persistence slice`). The category-budget change (D2) still stands and is now Open Question 3.
+
 ## Goal
 
 A student can open the app, add or update a budget amount typed as dollar text, log an expense with an amount and a date (today by default), and immediately see total budget, total spending, remaining budget (negative shown as `-$…`), and a newest-first list of expenses. The code follows strict MVC. The Model knows nothing about the controller, view or display interface. The View talks only to the Controller and cannot name Model types. The Controller mediates and pushes view-ready strings through an abstract `BudgetDisplay`. These rules are enforced by CMake target boundaries and by a ctest layering check that runs in CI.
@@ -40,7 +42,7 @@ In (REQUIREMENTS.md "MVP requirements"; SPECIFICATIONS.md "Planned MVP screen"):
 - Req 3, view: total budget, total spending, remaining (minus sign when negative), and an expenses table (Date, Amount), newest first.
 
 Out:
-- Req 3's last bullet, persistence across restarts. It is MVP but a separate slice (D1). Only the seam is described below.
+- ~~Req 3's last bullet, persistence across restarts. It is MVP but a separate slice (D1). Only the seam is described below.~~ Superseded by D13: persistence is now IN scope and built (Part 2).
 - A single "overall budget" entity. The skeleton's category budgets stay, and total = sum (D2).
 - All "Later requirements": per-category spending, editing or deleting expenses, alerts, charts, dining points.
 - SPECIFICATIONS.md edits (open PR #7 owns that file; see Follow-ups). CI workflow changes are not needed.
@@ -194,7 +196,7 @@ private:
 
 `QApplication app; BudgetModel model; BudgetController controller(model); BudgetView view(controller); controller.setDisplay(&view); view.show(); return app.exec();`. It now includes `BudgetModel.h` explicitly.
 
-### Persistence seam (not built here)
+### Persistence seam (first written as "not built here"; built in Part 2 per D13, with D14's lock)
 
 A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `budget_model` + Qt6::Sql. Its API is `bool load(BudgetModel &, QString *error)` and `bool save(const BudgetModel &, QString *error)`. The store depends on the Model; the Model never includes the store.
 - Loading replays saved data through the public validated API: `addBudget`, plus `addExpense(dollarText, date)`. Expenses are stored as dollar text so no cents backdoor is needed.
@@ -384,7 +386,8 @@ Manual check (Huy, real window, `./build/app`):
 - **Per-day stays `double`.** It is display only and never used in totals, which is unchanged behaviour.
 - **Branch compatibility.** Teammates' unmerged branches calling `controller.budgets()` / `totalCents()` / `createBudget(..., qint64, ...)` will break on rebase. Call this out in the PR description.
 - `cmake --build … -- -k` is Makefiles syntax (Ninja: `-k 0`). It is used only in intermediate done-when checks, not in CI.
-- There are no security or data-migration implications. Data stays in memory (D1).
+- ~~There are no security or data-migration implications. Data stays in memory (D1).~~ Superseded: data is now saved to a local SQLite file (Part 2). Its data-loss risks were reviewed and designed out (findings 1–7, D14).
+- (Added in round 2.) CI has not run yet. Ubuntu's apt Qt (likely 6.4) is older than the local Qt 6.12, so the first push may surface API differences.
 
 ## Open Questions
 
@@ -395,6 +398,8 @@ Manual check (Huy, real window, `./build/app`):
    - Button: "Update selected budget".
 
    *Default taken: use them as written; changing any one is a single string plus its test.*
+   Part 2 adds these messages: "Saved data could not be loaded: …", "Your change was not saved: …", "Saved data could not be loaded, so changes are not being saved.", "Saved data is from a newer version." and "The budget is already open in another window."
+3. **One overall budget versus category budgets (D2).** The P3 doc says "one overall budget". The skeleton on main already had several category budgets, each with a date range; the docs list category budgets under "Want for later". This branch keeps them, with total budget = the sum of all budgets, and adds "update the selected budget's amount". *Default taken: keep them, because teammates' tests depend on them. Collapsing to a single budget would be a separate change that the team agrees on.*
 
 ## Follow-ups
 
@@ -403,7 +408,9 @@ Manual check (Huy, real window, `./build/app`):
   - Expense record and `updateBudgetAmount` / `parseBudgetAmount` / dated `addExpense` rules with exact messages.
   - The "Current screen" section.
   - Testing table rows for the four new test files.
-- Persistence slice (D1, seam above), including a `BudgetStore` rule in `tests/CheckLayering.cmake`.
+- ~~Persistence slice (D1, seam above), including a `BudgetStore` rule in `tests/CheckLayering.cmake`.~~ Done in Part 2.
+- Harden the layering check: it treats header names case-sensitively, while macOS is case-insensitive, and it does not flag a bare forward declaration of a Controller, View or Display type in the Model.
+- A test-quality nit: `tests/test_controller_persistence.cpp` around line 418 should `REQUIRE` the row count before `.at(0).at(0)`, so a broken save reports a failure instead of a segfault.
 - Extend the layering rules whenever a new `src/` file is added.
 
 ## Approval Checklist
@@ -423,7 +430,7 @@ Self-approved by the CTO on 2026-11-01 (autonomous mode).
 - Verification: full build, ctest (`test_build` + `layering`), seven layering mutation probes plus one in-tree probe, an `otool` check that `test_build` has no QtWidgets, and an offscreen app smoke run.
 - Open questions: both have defaults that touch no money, security or logged decision (accept future-dated expenses; use the drafted UI strings). The build proceeds on those defaults and lists them for Huy.
 - Security and data findings: none.
-- Scope: this matches the agreed proposal. Persistence is deliberately left for its own slice (D1).
+- Scope: this matches the agreed proposal. Persistence is deliberately left for its own slice (D1). (Later reversed by D13.)
 - Execution change from the Tasks table: T1–T3 go to one test-author run before any implementation. T4–T6 then go to one implementer run (opus, because it is the data model and the layer contract), committed as three separate commits. T7–T8 go to a second implementer run, committed separately. All of these run one after another, because the agents share one `build/` directory.
 
 ## Task Ledger
