@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <numeric>
 #include <optional>
+#include <utility>
 
 namespace {
 // Exact dollars from exact cents: "$1,234.50", "$12.345", "-$0.005". Shifting the
@@ -44,6 +45,8 @@ void BudgetController::setDisplay(BudgetDisplay *display) {
 void BudgetController::setStore(BudgetStore *store) { store_ = store; }
 
 bool BudgetController::loadSaved() {
+    // The pending index points into the model this load replaces.
+    pending_.reset();
     if (!store_) return true;
     QString error;
     if (!store_->load(model_, &error)) {
@@ -81,7 +84,9 @@ BudgetScreen BudgetController::screen() const {
     });
     for (qsizetype index : order) {
         const Expense &expense = expenses.at(index);
-        result.expenses.append({formatDate(expense.date), formatMoney(expense.amountCents)});
+        result.expenses.append({formatDate(expense.date), formatMoney(expense.amountCents),
+                                expense.category.isEmpty() ? QStringLiteral("Uncategorized")
+                                                           : expense.category});
     }
     return result;
 }
@@ -89,9 +94,46 @@ BudgetScreen BudgetController::screen() const {
 bool BudgetController::createBudget(const QString &category, const QString &amountText,
                                     const QDate &startDate, const QDate &endDate) {
     QString error;
+    qsizetype conflictIndex = -1;
     const std::optional<qint64> cents = BudgetModel::parseBudgetAmount(amountText, &error);
-    const bool added = cents && model_.addBudget({category, *cents, startDate, endDate}, &error);
-    return report(added, error, QStringLiteral("Budget added."));
+    const bool added =
+        cents && model_.addBudget({category, *cents, startDate, endDate}, &error, &conflictIndex);
+    if (conflictIndex < 0) return report(added, error, QStringLiteral("Budget added."));
+
+    // Nothing changed, so nothing is saved; the display's answer decides what happens next.
+    pending_ = PendingBudget{conflictIndex, category, *cents, startDate, endDate};
+    const Budget &existing = model_.budgets().at(conflictIndex);
+    if (display_) {
+        display_->askBudgetConflict(QStringLiteral("You already have a %1 budget of %2 for %3 to %4.")
+                                        .arg(existing.category,
+                                             formatMoney(DecimalCents(existing.amountCents)),
+                                             formatDate(existing.startDate),
+                                             formatDate(existing.endDate)));
+    }
+    return false;
+}
+
+bool BudgetController::resolveBudgetConflict(ConflictChoice choice) {
+    const std::optional<PendingBudget> pending = std::exchange(pending_, std::nullopt);
+    if (!pending) return false;
+    switch (choice) {
+    case ConflictChoice::UpdateExisting: {
+        QString error;
+        const bool replaced = model_.replaceBudget(
+            pending->conflictIndex,
+            {pending->category, pending->amountCents, pending->startDate, pending->endDate},
+            &error);
+        return report(replaced, error, QStringLiteral("Budget updated."));
+    }
+    case ConflictChoice::ChooseAnotherCategory:
+        if (display_)
+            display_->showMessage(QStringLiteral("Choose another category for this budget."), false);
+        return true;
+    case ConflictChoice::Cancel:
+        if (display_) display_->showMessage(QStringLiteral("Budget not added."), false);
+        return true;
+    }
+    return false;
 }
 
 bool BudgetController::updateBudgetAmount(int row, const QString &amountText) {
@@ -101,9 +143,10 @@ bool BudgetController::updateBudgetAmount(int row, const QString &amountText) {
     return report(updated, error, QStringLiteral("Budget amount updated."));
 }
 
-bool BudgetController::addExpense(const QString &amountText, const QDate &date) {
+bool BudgetController::addExpense(const QString &amountText, const QDate &date,
+                                  const QString &category) {
     QString error;
-    const bool saved = model_.addExpense(amountText, date, &error);
+    const bool saved = model_.addExpense(amountText, date, category, &error);
     return report(saved, error, QStringLiteral("Expense saved."));
 }
 
@@ -112,6 +155,8 @@ bool BudgetController::addExpense(const QString &amountText, const QDate &date) 
 // nothing is saved and only the error is shown.
 bool BudgetController::report(bool succeeded, const QString &error,
                               const QString &successMessage) {
+    // Every action ends here, and any action ends a pending duplicate question.
+    pending_.reset();
     if (!succeeded) {
         if (display_) display_->showMessage(error, true);
         return false;

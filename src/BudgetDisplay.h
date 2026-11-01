@@ -14,6 +14,7 @@ struct BudgetRow {
 struct ExpenseRow {
     QString date;
     QString amount;
+    QString category;  // "Uncategorized" when none was recorded
 };
 
 struct BudgetScreen {
@@ -24,10 +25,16 @@ struct BudgetScreen {
     QVector<ExpenseRow> expenses;  // newest first
 };
 
+// The user's answer to a duplicate-budget question.
+enum class ConflictChoice { UpdateExisting, ChooseAnotherCategory, Cancel };
+
 // The controller pushes updates through this interface; the Model never sees it.
 class BudgetDisplay {
 public:
     virtual ~BudgetDisplay() = default;
     virtual void showScreen(const BudgetScreen &screen) = 0;
     virtual void showMessage(const QString &text, bool isError) = 0;
+    // Asks how to handle a budget that clashes with an existing one. The answer comes back
+    // later through BudgetController::resolveBudgetConflict.
+    virtual void askBudgetConflict(const QString &message) = 0;
 };
