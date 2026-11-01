@@ -465,18 +465,20 @@ TEST_CASE("stores on different files in one process do not interfere") {
     TempDir tmp;
     const QString pathA = tmp.path("a.sqlite");
     const QString pathB = tmp.path("b.sqlite");
-    BudgetStore storeA(pathA);
-    BudgetStore storeB(pathB);
-    BudgetModel modelA;
-    BudgetModel modelB;
-    REQUIRE(storeA.load(modelA));
-    REQUIRE(storeB.load(modelB));
-    REQUIRE(modelA.addBudget({"OnlyA", 111, QDate(2026, 1, 1), QDate(2026, 1, 2)}));
-    REQUIRE(modelB.addBudget({"OnlyB", 222, QDate(2026, 2, 1), QDate(2026, 2, 2)}));
-    REQUIRE(modelB.addExpense("9.99", QDate(2026, 2, 1)));
+    {
+        BudgetStore storeA(pathA);
+        BudgetStore storeB(pathB);
+        BudgetModel modelA;
+        BudgetModel modelB;
+        REQUIRE(storeA.load(modelA));
+        REQUIRE(storeB.load(modelB));
+        REQUIRE(modelA.addBudget({"OnlyA", 111, QDate(2026, 1, 1), QDate(2026, 1, 2)}));
+        REQUIRE(modelB.addBudget({"OnlyB", 222, QDate(2026, 2, 1), QDate(2026, 2, 2)}));
+        REQUIRE(modelB.addExpense("9.99", QDate(2026, 2, 1)));
 
-    REQUIRE(storeA.save(modelA));
-    REQUIRE(storeB.save(modelB));
+        REQUIRE(storeA.save(modelA));
+        REQUIRE(storeB.save(modelB));
+    }
 
     BudgetStore readerA(pathA);
     BudgetStore readerB(pathB);
