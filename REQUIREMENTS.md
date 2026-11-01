@@ -91,7 +91,7 @@ The walking skeleton proves the full path from the Qt user interface through the
 | --- | --- |
 | Enter a budget amount | Done in the GUI. The skeleton also stores a category and date range for each budget. |
 | Update the budget amount | Done in the GUI: select a budget and enter a new amount. |
-| Reject invalid budget input with a message | Done: negative amounts, missing dates, end date before start date, and blank categories |
+| Reject invalid budget input with a message | Done: negative amounts, missing dates, end date before start date, blank categories, and budget amount text that is empty, not a plain decimal, a fraction of a cent, or too large |
 | Record an expense amount | Done in the GUI |
 | Choose an expense date | Done. The date defaults to today and can be changed. |
 | Show total budget | Done |

@@ -6,6 +6,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -125,7 +126,11 @@ void BudgetView::saveBudget() {
 }
 
 void BudgetView::updateSelectedBudget() {
-    controller_.updateBudgetAmount(budgetsTable_->currentRow(), budgetAmount_->text());
+    // currentRow() can be set by keyboard focus or a Ctrl+click deselect with nothing highlighted,
+    // so use the selected row to avoid overwriting a budget the student never picked.
+    const QModelIndexList rows = budgetsTable_->selectionModel()->selectedRows();
+    const int row = rows.isEmpty() ? -1 : rows.first().row();
+    controller_.updateBudgetAmount(row, budgetAmount_->text());
 }
 
 void BudgetView::saveExpense() {
