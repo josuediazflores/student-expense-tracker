@@ -18,19 +18,23 @@ add_library(budget_model STATIC src/BudgetModel.cpp src/DecimalCents.cpp)
 target_include_directories(budget_model PUBLIC src)
 target_link_libraries(budget_model PUBLIC Qt6::Core)
 
+# Saves the model to SQLite. It sits beside the Model, so the Model never links Qt6::Sql.
+add_library(budget_store STATIC src/BudgetStore.cpp)
+target_link_libraries(budget_store PUBLIC budget_model Qt6::Core Qt6::Sql)
+
 add_library(budget_controller STATIC src/BudgetController.cpp)
-target_link_libraries(budget_controller PUBLIC budget_model Qt6::Core)
+target_link_libraries(budget_controller PUBLIC budget_model budget_store Qt6::Core)
 
 # The GUI application.
 add_executable(app src/main.cpp src/BudgetView.cpp)
-target_link_libraries(app PRIVATE budget_controller Qt6::Widgets Qt6::Sql)
+target_link_libraries(app PRIVATE budget_controller Qt6::Widgets)
 
 include(CTest)
 if(BUILD_TESTING)
     # Teammates can add test files without defining another main().
     file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)
     add_executable(test_build ${TEST_SOURCES})
-    target_link_libraries(test_build PRIVATE budget_controller Qt6::Core)
+    target_link_libraries(test_build PRIVATE budget_controller Qt6::Core Qt6::Sql)
     target_include_directories(test_build PRIVATE tests)
     add_test(NAME test_build COMMAND test_build)
     add_test(NAME layering

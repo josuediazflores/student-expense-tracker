@@ -97,5 +97,5 @@ The walking skeleton proves the full path from the Qt user interface through the
 | Show total budget | Done |
 | Show total spending and remaining budget | Done. A negative remaining amount shows a minus sign. |
 | Show a list of expenses | Done. Expenses show newest first with date and amount. |
-| Keep data after the app closes | Not started. Data is held in memory for the current session. |
+| Keep data after the app closes | Done. Budgets and expenses are saved to a SQLite file named `budget.sqlite` after every successful change and loaded when the app starts. The file is in the per-user app data folder, for example `~/Library/Application Support/SCU Student Budget/` on macOS. |
 | Show a daily amount for each budget | Done (from the later daily-limit requirement) |

@@ -11,7 +11,7 @@ A native Qt Widgets and C++ walking skeleton for CSCI 187, built on the [course 
 - Record expenses with an amount and a date (today by default) in the GUI.
 - View total spending, remaining budget (negative when overspent), and a newest-first list of expenses.
 
-The daily amount includes both the start and end dates. Budgets and spending totals are stored in memory for the current app session. The GUI provides budget entry and update, expense entry, the totals, and the expense list. Amounts are typed as dollar text, and the model validates them. Meal-plan balance imports, persistence, and charts are later increments.
+The daily amount includes both the start and end dates. Budgets and expenses are saved after every successful change and loaded again when the app starts, so they remain available after the app is closed and reopened. If the saved file cannot be loaded, the app says so and does not overwrite it. The GUI provides budget entry and update, expense entry, the totals, and the expense list. Amounts are typed as dollar text, and the model validates them. Meal-plan balance imports and charts are later increments.
 
 ## Build and run
 
@@ -51,12 +51,13 @@ Tests use the vendored doctest header. Each new test file should include `doctes
 
 ## Project structure
 
-- `src/BudgetModel.*`: stores budgets, validates rules, and calculates totals. It has no dependency on the view or controller.
+- `src/BudgetModel.*`: holds budgets and expenses, validates rules, and calculates totals. It has no dependency on the view, the controller, or storage.
 - `src/DecimalCents.*`: preserves fractional cents with exact decimal arithmetic.
 - `src/BudgetController.*`: receives requests from the view as raw text and dates, calls the model, formats money and dates as strings, and pushes the result to the display.
 - `src/BudgetDisplay.h`: the abstract interface the controller uses to show a screen or a message. It holds only view-ready strings.
 - `src/BudgetView.*`: Qt Widgets forms and tables. It implements `BudgetDisplay`.
-- `src/main.cpp`: creates the model, controller, and view and connects them.
+- `src/BudgetStore.*`: saves the model to a SQLite file and loads it back through the model's public, validated functions. Expense amounts are stored as exact dollar text, so fractions of a cent are kept. It refuses to save after a failed load, so a file it could not read is never overwritten.
+- `src/main.cpp`: creates the store, model, controller, and view and connects them. The data is saved in `budget.sqlite` in the per-user app data folder, which on macOS is `~/Library/Application Support/SCU Student Budget/`.
 - `tests/CheckLayering.cmake`: the layering check that `ctest` runs as the `layering` test.
 
-The layers follow strict MVC. The model knows nothing about the controller or the view. The view calls only the controller and cannot include the model's headers, so it never sees model types. The controller mediates between them and updates the view through `BudgetDisplay`. CMake builds the model and controller as libraries that do not link Qt Widgets, and `CheckLayering.cmake` fails the `layering` test if a source file includes a header it should not, such as a Widgets header in the model or `BudgetModel.h` in the view.
+The layers follow strict MVC. The model knows nothing about the controller, the view, or storage; the store sits beside the model and the controller calls it. The view calls only the controller and cannot include the model's headers, so it never sees model types. The controller mediates between them and updates the view through `BudgetDisplay`. CMake builds the model and controller as libraries that do not link Qt Widgets, and `CheckLayering.cmake` fails the `layering` test if a source file includes a header it should not, such as a Widgets header in the model or `BudgetModel.h` in the view.

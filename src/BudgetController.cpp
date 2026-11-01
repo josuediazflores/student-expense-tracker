@@ -1,6 +1,7 @@
 #include "BudgetController.h"
 
 #include "BudgetModel.h"
+#include "BudgetStore.h"
 #include "DecimalCents.h"
 
 #include <QLocale>
@@ -38,6 +39,20 @@ BudgetController::BudgetController(BudgetModel &model) : model_(model) {}
 void BudgetController::setDisplay(BudgetDisplay *display) {
     display_ = display;
     if (display_) display_->showScreen(screen());
+}
+
+void BudgetController::setStore(BudgetStore *store) { store_ = store; }
+
+bool BudgetController::loadSaved() {
+    if (!store_) return true;
+    QString error;
+    if (!store_->load(model_, &error)) {
+        if (display_)
+            display_->showMessage(QStringLiteral("Saved data could not be loaded: ") + error, true);
+        return false;
+    }
+    if (display_) display_->showScreen(screen());
+    return true;
 }
 
 BudgetScreen BudgetController::screen() const {
@@ -92,15 +107,23 @@ bool BudgetController::addExpense(const QString &amountText, const QDate &date) 
     return report(saved, error, QStringLiteral("Expense saved."));
 }
 
-// Shows the new screen and a confirmation on success, or only the error on failure.
+// On success, saves the change, then shows the new screen and a confirmation, or the save
+// error. A failed save does not undo the change, so the action still succeeds. On failure,
+// nothing is saved and only the error is shown.
 bool BudgetController::report(bool succeeded, const QString &error,
                               const QString &successMessage) {
-    if (!display_) return succeeded;
-    if (succeeded) {
-        display_->showScreen(screen());
-        display_->showMessage(successMessage, false);
-    } else {
-        display_->showMessage(error, true);
+    if (!succeeded) {
+        if (display_) display_->showMessage(error, true);
+        return false;
     }
-    return succeeded;
+    QString saveError;
+    const bool saved = !store_ || store_->save(model_, &saveError);
+    if (display_) {
+        display_->showScreen(screen());
+        if (saved)
+            display_->showMessage(successMessage, false);
+        else
+            display_->showMessage(QStringLiteral("Your change was not saved: ") + saveError, true);
+    }
+    return true;
 }
