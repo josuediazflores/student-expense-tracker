@@ -526,3 +526,22 @@ The earlier `## Security Review` covered Part 1 only. Part 2 results:
 5. **LOW: dates.** Write and parse with the explicit format `"yyyy-MM-dd"`. `save` fails if a date does not round-trip.
 6. **LOW: order.** Use `position INTEGER PRIMARY KEY` in both tables and `ORDER BY position` in both SELECTs.
 7. **LOW: database checks.** `budgets`: `CHECK(amount_cents >= 0)` and `CHECK(length(category) > 0)`. `expenses`: `CHECK(typeof(amount_dollars) = 'text')`. Both amount columns are declared exactly `TEXT` or `INTEGER`; never use `NUMERIC`, which would turn "12.345" into a float.
+
+### Round 2 review triage (2026-11-01)
+
+- Fresh-eye review: APPROVE. One MINOR (two app copies on one file) and one NIT (wording).
+- Data review of the code: CHANGES NEEDED. One HIGH, reproduced with a probe: two stores loaded on the same file, and the last save silently erases the other's rows. Two LOWs (an ignored rollback result; "newer version" wording for a negative version). All seven plan corrections were confirmed in the code.
+- clean-check: NEEDS CLEANUP. One BLOCKER (R2): `FakeDisplay` is duplicated in tests/test_budget_controller.cpp and tests/persistence_test_support.h. SHOULDs: dollar-text helper repeated, `report()` name, `reject` lambda copies.
+- Security diff: gitleaks found no leaks, no new packages, and semgrep p/c returned 0 results. The LLM raised one finding, the same L1 as before (verdicts recorded in this plan); it goes to the filter.
+
+Fixing now (round 2 of 2):
+- **D14.** `BudgetStore` holds a `QLockFile` at `<databasePath>.lock` for its lifetime. The lock is taken in `load` with `tryLock(0)`, with `setStaleLockTime(0)`, so a lock is stale only when its owner process is dead.
+  - If the lock is taken, `load` fails with "The budget is already open in another window." The existing `loaded_` gate then blocks saving.
+  - Test: two stores on one path. The second load fails, the second save is refused, and the first store's rows are intact.
+  - Existing tests that reopen a file while the first store is still alive must scope the first store to end before reopening.
+  - Why: a student who opens the app twice must not lose entries silently.
+- R2: test_budget_controller.cpp uses the shared `FakeDisplay` from tests/persistence_test_support.h.
+
+Left as optional (with reasons):
+- The SHOULDs would touch teammates' existing code or are naming only.
+- The data LOWs are safe as they stand: saving stays blocked and the first error is reported.
