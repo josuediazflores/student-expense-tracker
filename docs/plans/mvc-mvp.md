@@ -677,9 +677,9 @@ Verdict: **GO.** Both items are small, in scope, and fit the existing layers. No
 
 | # | Task | Role | Model | Files it may touch | Done when | Status |
 |---|------|------|-------|--------------------|-----------|--------|
-| 12 | Failing tests: Model overlap/replace/restore/expense category; Controller conflict prompt + three choices + expense category; store v1→v2 upgrade, category round trip, duplicate-holding file loads and saves, update survives reload; fake display gains `askBudgetConflict` | team-test-author | sonnet | tests/ (new files + branch-added test files only) | new tests fail only for the missing API; teammates' tests untouched | pending |
-| 13 | Model + Display + Controller + Store changes | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.*, src/BudgetStore.* | `/tmp/mvc-build` build clean; ctest 100%; doctest 0 failed | pending |
-| 14 | View: conflict dialog, expense category picker and column; README/REQUIREMENTS lines; offscreen screenshot harness in the scratchpad with a temporary data path | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; screenshots of the conflict dialog and the expenses table | pending |
+| 12 | Failing tests: Model overlap/replace/restore/expense category; Controller conflict prompt + three choices + expense category; store v1→v2 upgrade, category round trip, duplicate-holding file loads and saves, update survives reload; fake display gains `askBudgetConflict` | team-test-author | sonnet | tests/ (new files + branch-added test files only) | new tests fail only for the missing API; teammates' tests untouched | done |
+| 13 | Model + Display + Controller + Store changes | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.*, src/BudgetStore.* | `/tmp/mvc-build` build clean; ctest 100%; doctest 0 failed | done |
+| 14 | View: conflict dialog, expense category picker and column; README/REQUIREMENTS lines; offscreen screenshot harness in the scratchpad with a temporary data path | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; screenshots of the conflict dialog and the expenses table | done |
 
 ### Part 3 plan reviews (2026-11-01)
 
@@ -722,5 +722,47 @@ Destructive steps needing Huy's sign-off: none. The upgrade only adds a column a
   - A pre-existing 0-byte backup leads to a new, valid timestamped v1 copy.
   - `loadSaved` clears a pending question.
 - **Comment and docs:** the `resolveBudgetConflict` contract comment (true means the choice was carried out; false means nothing was pending or the update failed); the REQUIREMENTS rows.
+
+**Round 1 done:**
+- Tests 5cd3720: the backup-failure and `loadSaved` cases already passed; the 0-byte and leftover-`.tmp` cases failed first.
+- Fix e776e6b: `.tmp` + rename, and a timestamped name when the plain name exists.
+- Docs f19d39e.
+- Results: doctest 339/339, 3288 assertions; ctest 2/2; 0 warnings.
+
+### Trial (Part 3)
+
+2026-11-01, base `7bc4c71`, HEAD `f19d39e`. **Verdict: ACCEPT.** All 18 requirements MET.
+- **Falsifier: HOLDS.** It ran 17 mutation probes, all caught. In an offscreen harness on a temporary file it showed: Huy's double add leaves one row; the dialog's text and three buttons; Update giving $300 and Nov 15–Dec 15 in place; Cancel and Escape changing nothing; Choose another category keeping the form and moving the window's focus to the category picker; and the expense category column and shared list.
+- **Advocate: STRONG.** It ran 14 probes and caught every valid one; the one survivor was a no-op probe.
+- **Judge:**
+  - It rebuilt the branch and re-ran the harness.
+  - It added its own probes: M1, loading through the strict `addBudget`, failed 9 cases. M2, which drops the "only a new conflict counts" rule in `replaceBudget`, failed 2. M3, an update that is not saved, failed 5.
+  - Claims audit: BACKED except semgrep, which it did not re-run, and Application Support, which it was not allowed to open.
+- **Not verified by anyone:**
+  - Real OS keyboard focus on screen.
+  - Closing the dialog with the window's X button.
+  - Upgrading Huy's real file; only identical temporary v1 files were tested.
+- **Observation:** a v1 file that keeps failing to load leaves one more timestamped backup on each launch. That can only happen with a file the Model rejects; Huy's file loads.
+
+### Final check (CTO, Part 3)
+
+Fresh build in /tmp/final-p3.
+- Build: 0 warnings or errors.
+- ctest: test_build Passed, layering Passed, 100% of 2.
+- doctest: 339 test cases and 3288 assertions, 0 failed.
+- `test_build` links no QtWidgets.
+- No teammate test file from `ed49eb0` was modified. 11 commits since `7bc4c71`; no upstream.
+
+### Retro (Part 3)
+
+- **Agents:**
+  - Plan reviews: security 2, data 1.
+  - Tests: test-author 2.
+  - Building: implementer 3.
+  - Code reviews: reviewer 1, clean-code 1, data 1, security 1.
+  - Trial: falsifier, advocate and judge.
+- **Fix rounds:** 1 of 2 (D23, the safe backup).
+- **What went well:** checking the teammates' `addBudget` calls before planning showed the overlap rule was safe. Building out of source left Huy's running app alone. The GUI now runs on this Mac, so the View was checked for real.
+- **What I'd brief differently:** ask the test-author for the backup's crash cases up front. The data review predicted them at plan time.
 
 **Kept on purpose:** the backup and the `restoreBudget` layering rule. Both come from the data review's safety findings, not from feature creep. `report()` clearing the pending question is deliberate, because every action ends there.
