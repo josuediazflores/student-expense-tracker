@@ -24,6 +24,15 @@ Received 2026-11-01 (relayed brief that quotes Huy's goal and his course's archi
 >
 > Huy is less deep on backend/architecture internals: in your final report, explain the why of each architectural decision in plain terms. Report: verdict, plan doc path, branch name, files changed, test/build output summary (with failures stated plainly), any open questions only Huy can answer, and anything you could not do (e.g. if you could not spawn your role agents as a subagent, say so and what you did instead).
 
+### Addendum 2026-11-01: Huy's follow-up request (relayed by the coordinator, Huy's words copied as received)
+
+Context from the coordinator: Huy ran the app and found that adding "Meal plan $250, Nov 1–Dec 1, 2026" twice created two identical rows.
+
+> 1. When the user add a budget for a category that has already has a budget in that time frame, it should not add another one but instead tell the user that they already have set a budget for it and check if the want to add that budget to another category or update the budget of that category (upated this feature and include a test for this)
+> 2. The expense being added should have an option to select a budget category
+
+The coordinator's defaults for this request are recorded as decisions D15–D22 under `## Part 3`.
+
 ## Verdict (CTO, Phase 0)
 
 GO WITH CHANGES. The proposal is right: the skeleton's include direction is correct, but the Controller exposes nothing about expenses, the View reaches into Model types (`Budget`, and calls `Budget::amountPerDay()`, a Model method, directly), and money goes through a `double`. Changes from the literal MVP: persistence (MVP requirement 3, last bullet) is left out of this slice and only its seam is designed (D1), and the skeleton's category budgets are kept rather than collapsed to one overall budget (D2), so teammates' tests stay untouched. Branch `huy/mvc-mvp` is cut from `origin/main` (ed49eb0), not from `huy/spec-decimal-cents`: that branch only changes SPECIFICATIONS.md (open PR #7), and the code does not need it. Local `main` is one commit behind `origin/main`, so `origin/main` is the base.
@@ -400,6 +409,14 @@ Manual check (Huy, real window, `./build/app`):
    *Default taken: use them as written; changing any one is a single string plus its test.*
    Part 2 adds these messages: "Saved data could not be loaded: …", "Your change was not saved: …", "Saved data could not be loaded, so changes are not being saved.", "Saved data is from a newer version." and "The budget is already open in another window."
 3. **One overall budget versus category budgets (D2).** The P3 doc says "one overall budget". The skeleton on main already had several category budgets, each with a date range; the docs list category budgets under "Want for later". This branch keeps them, with total budget = the sum of all budgets, and adds "update the selected budget's amount". *Default taken: keep them, because teammates' tests depend on them. Collapsing to a single budget would be a separate change that the team agrees on.*
+4. **Duplicates already saved (D18).** Files saved before the overlap rule can hold duplicates; Huy's own file has two identical Meal plan rows. They are kept and shown as saved, and the app opens and saves normally. *Default taken: no automatic merge or delete. Should the team want a way to remove a budget, that is the "edit and recover entries" item from the later list.*
+5. **Part 3 wording.** These strings are the defaults:
+   - "A budget for this category already covers some of those dates."
+   - "You already have a <category> budget of <$amount> for <start> to <end>."
+   - "Budget updated.", "Choose another category for this budget." and "Budget not added."
+   - The buttons "Update existing budget", "Choose another category" and "Cancel".
+   - "Uncategorized" for old expenses.
+   *Default taken: use as written.*
 
 ## Follow-ups
 
@@ -595,3 +612,71 @@ Fresh configure and build in a /tmp build directory.
   - Put checks under `tests/` from the start.
   - Give the test-author an explicit "no two live stores on one path" rule.
   - Plan mutation probes for the falsifier rather than for the verifier.
+
+## Part 3: Duplicate-budget guard and expense category (2026-11-01)
+
+Verdict: **GO.** Both items are small, in scope, and fit the existing layers. No teammate test adds two overlapping budgets in the same category (checked every `addBudget` call in the base test files), so the new rule breaks none of them. Size: STANDARD.
+
+### Decisions
+
+- **D15. What "already has a budget in that time frame" means.** A new budget is a duplicate when another budget has the same category and overlapping dates. Category comparison trims spaces and ignores case. Dates count inclusively, so Nov 1–Dec 1 and Dec 1–Dec 31 overlap on Dec 1. The same category with no overlap is allowed, and so is a different category on the same dates. Why: Huy's case is identical rows, but an overlapping one double-counts money just the same.
+- **D16. The Model rejects; it doesn't ask.**
+  - `addBudget` gets an optional out-parameter: `bool addBudget(const Budget &budget, QString *error = nullptr, qsizetype *conflictIndex = nullptr);`
+  - The overlap check runs last, after all existing rules, so existing messages and their order are unchanged.
+  - On overlap it returns false with "A budget for this category already covers some of those dates." and sets `*conflictIndex` to the first overlapping budget. On any other outcome it sets `*conflictIndex` to -1.
+  - Why: the Model states the fact, and the Controller decides what to ask the user. The Model never learns that a dialog exists.
+- **D17. Replacing an existing budget.**
+  - New `bool replaceBudget(qsizetype index, const Budget &budget, QString *error = nullptr);` applies every `addBudget` rule except one: the overflow check uses total − old + new.
+  - Overlap check: reject only if the replacement overlaps a same-category budget that the old version did NOT already overlap ("don't create a new conflict").
+  - An out-of-range index gets "Choose a budget to update."
+  - Why: in a clean file this is just "no overlap". In a file that already holds duplicates (Huy's real file has two identical Meal plan rows), Update still works instead of failing on the leftover twin.
+- **D18. Files that already hold duplicates.**
+  - New `bool restoreBudget(const Budget &budget, QString *error = nullptr);` applies every `addBudget` rule except the overlap rule. `BudgetStore::load` uses it instead of `addBudget`.
+  - Why: data already saved is kept exactly as it is. Nothing is merged or deleted, the app opens and can save again, and the new rule only stops new duplicates.
+  - The duplicate rows stay visible. There is no delete feature (deleting entries is a "Want for later" item); Huy can set one to $0 with Update if he wants. This is Open Question 4.
+- **D19. The conflict prompt.**
+  - `BudgetDisplay.h` gains `enum class ConflictChoice { UpdateExisting, ChooseAnotherCategory, Cancel };` and `virtual void askBudgetConflict(const QString &message) = 0;`.
+  - When `createBudget` is rejected with a conflict index, the controller stores a pending request (index + candidate budget). It then calls `askBudgetConflict("You already have a <category> budget of <$amount> for <start> to <end>.")` with the existing budget's values and returns false. It does not save and shows no other message.
+  - New `bool BudgetController::resolveBudgetConflict(ConflictChoice choice);`
+    - With nothing pending it returns false and does nothing.
+    - **UpdateExisting:** calls `replaceBudget(pending index, candidate)`. On success it shows the screen and the message "Budget updated.", and saves, through the same path as other actions. On failure it shows the error.
+    - **ChooseAnotherCategory:** changes nothing, does not save, and shows ("Choose another category for this budget.", false).
+    - **Cancel:** changes nothing, does not save, and shows ("Budget not added.", false).
+    - Every choice clears the pending request. So does any other controller action.
+  - Why: the Controller mediates. The View only reports the user's answer by calling the Controller.
+- **D20. The View's prompt.**
+  - `BudgetView::askBudgetConflict` queues a `QMessageBox` (via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`), so it opens after `createBudget` returns and the controller is never re-entered mid-call.
+  - The box has exactly three buttons: "Update existing budget", "Choose another category", "Cancel".
+  - It then calls `controller_.resolveBudgetConflict(choice)`. On "Choose another category" the View keeps the form values and focuses the category picker. On a successful Update it clears the budget amount field.
+- **D21. Expense category.**
+  - `Expense` gains `QString category` (trimmed; empty means uncategorized, which happens only for expenses saved before this change).
+  - New Model overload: `bool addExpense(const QString &amountDollars, const QDate &date, const QString &category, QString *error = nullptr);`. The existing overloads keep their signatures and record an empty category.
+  - Controller: `bool addExpense(const QString &amountText, const QDate &date, const QString &category = QString());`.
+  - `ExpenseRow` becomes `{ date, amount, category }`, with the new field last so existing field-by-field comparisons keep working. An empty category is shown as "Uncategorized".
+  - View: an expense category picker that uses the same list as the budget picker (one list in the View, used by both). The expenses table columns become Date, Category, Amount.
+  - No per-category totals or anything beyond this.
+  - Why: this is the smallest change that records, shows and saves the category without touching teammates' `addExpense(text)` calls.
+- **D22. Saving the expense category (schema version 2).**
+  - `expenses` gains `category TEXT NOT NULL DEFAULT ''`.
+  - `load` behaviour by version:
+    - 0, an empty file: create the v2 schema.
+    - 1: upgrade in one transaction (`ALTER TABLE expenses ADD COLUMN category TEXT NOT NULL DEFAULT ''`, then `user_version = 2`). Roll back and fail on any error.
+    - 2: proceed.
+    - Anything else: "Saved data is from a newer version."
+  - The upgrade only adds a column; no row is changed or removed. Old expenses load as uncategorized.
+  - An older build that opens a v2 file refuses to load it and therefore refuses to save. That is safe.
+  - Why: existing files keep working, and nothing is lost.
+
+### Constraints for every task
+
+- **Build out of source in `/tmp/mvc-build`** (`cmake -S <repo> -B /tmp/mvc-build -DCMAKE_PREFIX_PATH=/opt/homebrew/opt/qt`). Huy's app is running from `build/` and holds the lock on his real file. Do not rebuild `build/`, and never open, modify or delete anything in `~/Library/Application Support/SCU Student Budget`. Tests use temporary files only.
+- Teammates' test files from base `ed49eb0` are never modified. Tests added on this branch may be adjusted by the test author (lifetimes, data or the new display method) without weakening any assertion.
+- The layering rules and `tests/CheckLayering.cmake` stay green. No new dependency (QMessageBox is in Qt Widgets, which the app already links).
+
+### Tasks
+
+| # | Task | Role | Model | Files it may touch | Done when | Status |
+|---|------|------|-------|--------------------|-----------|--------|
+| 12 | Failing tests: Model overlap/replace/restore/expense category; Controller conflict prompt + three choices + expense category; store v1→v2 upgrade, category round trip, duplicate-holding file loads and saves, update survives reload; fake display gains `askBudgetConflict` | team-test-author | sonnet | tests/ (new files + branch-added test files only) | new tests fail only for the missing API; teammates' tests untouched | pending |
+| 13 | Model + Display + Controller + Store changes | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.*, src/BudgetStore.* | `/tmp/mvc-build` build clean; ctest 100%; doctest 0 failed | pending |
+| 14 | View: conflict dialog, expense category picker and column; README/REQUIREMENTS lines; offscreen screenshot harness in the scratchpad with a temporary data path | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; screenshots of the conflict dialog and the expenses table | pending |
