@@ -4,6 +4,7 @@
 #include "DecimalCents.h"
 
 #include <QDate>
+#include <QFile>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -14,7 +15,7 @@
 
 namespace {
 const QString kDateFormat = QStringLiteral("yyyy-MM-dd");
-constexpr int kSchemaVersion = 1;
+constexpr int kSchemaVersion = 2;
 
 bool fail(QString *error, const QString &text) {
     if (error) *error = text;
@@ -41,20 +42,20 @@ bool inTransaction(QSqlDatabase &db, QString *error, const std::function<bool()>
     return false;
 }
 
-// Version 0 is a new file: create the tables. Plain CREATE TABLE (not IF NOT EXISTS) fails
-// on an unversioned file that already has tables, instead of guessing what it holds.
-bool ensureSchema(QSqlDatabase &db, QString *error) {
-    int version = 0;
-    {
-        QSqlQuery query(db);
-        if (!query.exec(QStringLiteral("PRAGMA user_version")) || !query.next())
-            return fail(error, query.lastError().text());
-        version = query.value(0).toInt();
+std::optional<int> schemaVersion(QSqlDatabase &db, QString *error) {
+    QSqlQuery query(db);
+    if (!query.exec(QStringLiteral("PRAGMA user_version")) || !query.next()) {
+        fail(error, query.lastError().text());
+        return std::nullopt;
     }
-    if (version == kSchemaVersion) return true;
-    if (version != 0) return fail(error, QStringLiteral("Saved data is from a newer version."));
+    return query.value(0).toInt();
+}
 
+// For a new file (version 0). Plain CREATE TABLE (not IF NOT EXISTS) fails on an
+// unversioned file that already has tables, instead of guessing what it holds.
+bool createSchema(QSqlDatabase &db, QString *error) {
     // Columns are exactly INTEGER or TEXT: NUMERIC affinity would turn "12.345" into a float.
+    // category is last and declared like the version 1 upgrade adds it, so both files match.
     return inTransaction(db, error, [&] {
         return run(db,
                    QStringLiteral("CREATE TABLE budgets("
@@ -69,10 +70,28 @@ bool ensureSchema(QSqlDatabase &db, QString *error) {
                                   "position INTEGER PRIMARY KEY,"
                                   " amount_dollars TEXT NOT NULL"
                                   " CHECK(typeof(amount_dollars) = 'text'),"
-                                  " date TEXT NOT NULL)"),
+                                  " date TEXT NOT NULL,"
+                                  " category TEXT NOT NULL DEFAULT '')"),
                    error) &&
                run(db, QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion), error);
     });
+}
+
+// The upgrade is one-way and older builds refuse a version 2 file, so a version 1 copy is
+// kept as the way back. An existing backup is the oldest copy and is never replaced.
+bool backUpVersion1(QSqlDatabase &db, QString *error) {
+    const QString backup = db.databaseName() + QStringLiteral(".v1-backup.sqlite");
+    if (QFile::exists(backup)) return true;
+    QSqlQuery query(db);
+    if (query.prepare(QStringLiteral("VACUUM INTO ?"))) {
+        query.bindValue(0, backup);
+        if (query.exec()) return true;
+    }
+    fail(error, QStringLiteral("A backup of the saved data could not be made: ") +
+                    query.lastError().text());
+    // A partial copy would stop every later load from making a real one.
+    QFile::remove(backup);
+    return false;
 }
 
 // An invalid QDate for text that is not exactly yyyy-MM-dd; the Model rejects it.
@@ -101,18 +120,21 @@ bool readBudgets(QSqlDatabase &db, BudgetModel &model, QString *error) {
         const Budget budget{query.value(0).toString(), cents.toLongLong(),
                             parseDate(query.value(2)), parseDate(query.value(3))};
         QString modelError;
-        if (!model.addBudget(budget, &modelError)) return fail(error, rejected + modelError);
+        // Saved duplicates are kept as saved; the overlap rule only stops new ones.
+        if (!model.restoreBudget(budget, &modelError)) return fail(error, rejected + modelError);
     }
     return !query.lastError().isValid() || fail(error, query.lastError().text());
 }
 
 bool readExpenses(QSqlDatabase &db, BudgetModel &model, QString *error) {
     QSqlQuery query(db);
-    if (!query.exec(QStringLiteral("SELECT amount_dollars, date FROM expenses ORDER BY position")))
+    if (!query.exec(QStringLiteral(
+            "SELECT amount_dollars, date, category FROM expenses ORDER BY position")))
         return fail(error, query.lastError().text());
     for (int row = 1; query.next(); ++row) {
         QString modelError;
-        if (!model.addExpense(query.value(0).toString(), parseDate(query.value(1)), &modelError))
+        if (!model.addExpense(query.value(0).toString(), parseDate(query.value(1)),
+                              query.value(2).toString(), &modelError))
             return fail(error,
                         QStringLiteral("Saved expense %1 was rejected. ").arg(row) + modelError);
     }
@@ -143,7 +165,7 @@ bool writeBudgets(QSqlDatabase &db, const QVector<Budget> &budgets, QString *err
 bool writeExpenses(QSqlDatabase &db, const QVector<Expense> &expenses, QString *error) {
     QSqlQuery insert(db);
     if (!insert.prepare(QStringLiteral(
-            "INSERT INTO expenses(position, amount_dollars, date) VALUES(?, ?, ?)")))
+            "INSERT INTO expenses(position, amount_dollars, date, category) VALUES(?, ?, ?, ?)")))
         return fail(error, insert.lastError().text());
     for (qsizetype i = 0; i < expenses.size(); ++i) {
         const Expense &expense = expenses.at(i);
@@ -159,6 +181,8 @@ bool writeExpenses(QSqlDatabase &db, const QVector<Expense> &expenses, QString *
         insert.bindValue(0, static_cast<qint64>(i));
         insert.bindValue(1, dollars);
         insert.bindValue(2, *date);
+        // Qt binds a null QString as SQL NULL, so "uncategorized" is written as ''.
+        insert.bindValue(3, expense.category.isNull() ? QStringLiteral("") : expense.category);
         if (!insert.exec()) return fail(error, insert.lastError().text());
     }
     return true;
@@ -189,11 +213,35 @@ bool BudgetStore::load(BudgetModel &model, QString *error) {
     if (!lock_.isLocked() && !lock_.tryLock(0))
         return fail(error, QStringLiteral("The budget is already open in another window."));
     QSqlDatabase db = QSqlDatabase::database(connectionName_, false);
-    if (!ensureOpen(db, error) || !ensureSchema(db, error)) return false;
+    if (!ensureOpen(db, error)) return false;
+    const std::optional<int> version = schemaVersion(db, error);
+    if (!version) return false;
 
     // Replay into a fresh model so a rejected row leaves the caller's model untouched.
     BudgetModel saved;
-    if (!readBudgets(db, saved, error) || !readExpenses(db, saved, error)) return false;
+    const auto replay = [&] {
+        return readBudgets(db, saved, error) && readExpenses(db, saved, error);
+    };
+    bool replayed = false;
+    if (*version == 0) {
+        replayed = createSchema(db, error) && replay();
+    } else if (*version == 1) {
+        // The upgrade commits only if every row is accepted; otherwise the file stays version 1.
+        replayed = backUpVersion1(db, error) && inTransaction(db, error, [&] {
+            return run(db,
+                       QStringLiteral("ALTER TABLE expenses"
+                                      " ADD COLUMN category TEXT NOT NULL DEFAULT ''"),
+                       error) &&
+                   run(db, QStringLiteral("PRAGMA user_version = %1").arg(kSchemaVersion),
+                       error) &&
+                   replay();
+        });
+    } else if (*version == kSchemaVersion) {
+        replayed = replay();
+    } else {
+        return fail(error, QStringLiteral("Saved data is from a newer version."));
+    }
+    if (!replayed) return false;
     model = saved;
     loaded_ = true;
     if (error) error->clear();
