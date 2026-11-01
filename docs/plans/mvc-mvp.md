@@ -680,3 +680,18 @@ Verdict: **GO.** Both items are small, in scope, and fit the existing layers. No
 | 12 | Failing tests: Model overlap/replace/restore/expense category; Controller conflict prompt + three choices + expense category; store v1→v2 upgrade, category round trip, duplicate-holding file loads and saves, update survives reload; fake display gains `askBudgetConflict` | team-test-author | sonnet | tests/ (new files + branch-added test files only) | new tests fail only for the missing API; teammates' tests untouched | pending |
 | 13 | Model + Display + Controller + Store changes | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.*, src/BudgetStore.* | `/tmp/mvc-build` build clean; ctest 100%; doctest 0 failed | pending |
 | 14 | View: conflict dialog, expense category picker and column; README/REQUIREMENTS lines; offscreen screenshot harness in the scratchpad with a temporary data path | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; screenshots of the conflict dialog and the expenses table | pending |
+
+### Part 3 plan reviews (2026-11-01)
+
+This section covers the Part 3 revision of this plan only.
+- **Security (plan mode):** `security:pass`. The single LLM finding (the plan's recorded review history) was filtered at 3/10.
+- **Data review:** SOUND. No CRITICAL or HIGH finding, and no data loss possible. The reviewer confirmed on a throwaway v1 file in its scratchpad that the ALTER + `user_version` transaction rolls back cleanly and keeps "12.345" as text. Adopted:
+
+1. **(MEDIUM) Keep a backup before the one-way upgrade.** On the version-1 path, while holding the lock and before the upgrade transaction, run `VACUUM INTO '<path>.v1-backup.sqlite'`, but only if that file does not exist yet. If the backup fails, the load fails and nothing is changed. README says where the backup is. Why: after the upgrade, the old build (the one Huy is running now) can no longer open the file. The backup is the way back.
+2. **(MEDIUM) Saves must write the category.** `writeExpenses` INSERTs `category`; `readExpenses` SELECTs it and replays it through `addExpense(text, date, category)`. The round-trip test saves and reloads twice, so a save that drops categories is caught.
+3. **(LOW) One transaction for the upgrade and the replay.** On the version-1 path, the upgrade and the row replay share one transaction, which commits only if every row is accepted. Otherwise it rolls back and the file stays v1.
+4. **(LOW) New files and upgraded files have the same shape.** A fresh v2 file declares `category TEXT NOT NULL DEFAULT ''` as the last column of `expenses`, exactly like the upgrade. A test compares `PRAGMA table_info(expenses)` for both paths.
+5. **(LOW) The D17 rule, stated exactly.** For each j != index with the same category (trimmed, case-insensitive): if the candidate overlaps j and the old budget did not overlap j, reject.
+6. **(LOW) Only the store may call `restoreBudget`.** A header comment says it is for the store's load only, and `tests/CheckLayering.cmake` fails if any src file other than BudgetModel.* and BudgetStore.cpp contains `restoreBudget(`.
+
+Destructive steps needing Huy's sign-off: none. The upgrade only adds a column and keeps a backup first.
