@@ -233,11 +233,11 @@ TEST_CASE("budget cents are stored as integers and dates as ISO text") {
     CHECK(expenseDates.at(1).at(0).toString() == QStringLiteral("2026-01-10"));
 }
 
-TEST_CASE("a new database is marked schema version 1") {
+TEST_CASE("a new database is marked schema version 2") {
     TempDir tmp;
     saveFilled(tmp.path());
 
-    CHECK(rawInt(tmp.path(), "PRAGMA user_version") == 1);
+    CHECK(rawInt(tmp.path(), "PRAGMA user_version") == 2);
 }
 
 // ---- Missing file --------------------------------------------------------------------
@@ -384,7 +384,7 @@ TEST_CASE("a bad expense row also blocks saving and keeps the saved rows") {
 
 TEST_CASE("a file from a newer version fails the load with the version message") {
     TempDir tmp;
-    REQUIRE(writeRawDatabase(tmp.path(), 2, {}));
+    REQUIRE(writeRawDatabase(tmp.path(), 3, {}));
     BudgetStore store(tmp.path());
     BudgetModel model;
     QString error;
@@ -397,7 +397,7 @@ TEST_CASE("a file from a newer version fails the load with the version message")
 
 TEST_CASE("saving stays blocked after a newer-version load and the file is untouched") {
     TempDir tmp;
-    REQUIRE(writeRawDatabase(tmp.path(), 2, {}));
+    REQUIRE(writeRawDatabase(tmp.path(), 3, {}));
     BudgetStore store(tmp.path());
     BudgetModel model;
     REQUIRE_FALSE(store.load(model));
@@ -407,7 +407,7 @@ TEST_CASE("saving stays blocked after a newer-version load and the file is untou
     CHECK_FALSE(store.save(model, &error));
 
     CHECK(error == kBlocked);
-    CHECK(rawInt(tmp.path(), "PRAGMA user_version") == 2);
+    CHECK(rawInt(tmp.path(), "PRAGMA user_version") == 3);
     checkOriginalRowsIntact(tmp.path(), 1, 1);
 }
 

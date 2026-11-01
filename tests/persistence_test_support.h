@@ -121,10 +121,16 @@ public:
         messages.emplace_back(text, isError);
         events.push_back('M');
     }
+    void askBudgetConflict(const QString &message) override {
+        conflicts.push_back(message);
+        events.push_back('Q');
+    }
 
     std::vector<BudgetScreen> screens;
     std::vector<std::pair<QString, bool>> messages;
-    std::vector<char> events;  // 'S' for a screen, 'M' for a message, in call order
+    std::vector<QString> conflicts;  // the text of each duplicate-budget question
+    // 'S' for a screen, 'M' for a message, 'Q' for a duplicate-budget question, in call order
+    std::vector<char> events;
 };
 
 }  // namespace persistence_test

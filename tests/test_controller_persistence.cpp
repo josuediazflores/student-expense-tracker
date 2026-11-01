@@ -293,7 +293,7 @@ TEST_CASE("loadSaved on a corrupt file returns false and shows a load-failed err
 
 TEST_CASE("loadSaved on a newer-version file names the version problem") {
     TempDir tmp;
-    REQUIRE(writeRawDatabase(tmp.path(), 2, {}));
+    REQUIRE(writeRawDatabase(tmp.path(), 3, {}));
     BudgetStore store(tmp.path());
     BudgetModel model;
     BudgetController controller(model);

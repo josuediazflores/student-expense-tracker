@@ -15,6 +15,9 @@
 #              GUI classes, or Qt signals. The Model must not know about storage, the View
 #              only calls the Controller, and the Controller header forward-declares the
 #              store, so none of those include BudgetStore.h.
+#   restoreBudget  is for the store's load only: no src file other than BudgetModel.h,
+#              BudgetModel.cpp and BudgetStore.cpp may contain the text "restoreBudget(",
+#              so the duplicate-budget rule cannot be bypassed from the Controller or View.
 # Only direct includes are inspected. That is enough: the Controller header may not
 # include Model headers, so nothing reaches the View through it.
 
@@ -168,6 +171,22 @@ check_file("src/BudgetStore.h" STORE)
 # The .cpp is optional here: without it the build fails anyway, and the missing header
 # is the single violation that marks the store as not yet written.
 check_file("src/BudgetStore.cpp" STORE OPTIONAL)
+
+# restoreBudget skips the duplicate-budget rule, so only the Model that defines it and the
+# store's load that needs it may name it. Every file under src/ is scanned, main.cpp too.
+file(GLOB src_files RELATIVE "${SOURCE_DIR}" "${SOURCE_DIR}/src/*")
+foreach(relpath IN LISTS src_files)
+    if(relpath MATCHES "^src/(BudgetModel[.]h|BudgetModel[.]cpp|BudgetStore[.]cpp)$"
+       OR IS_DIRECTORY "${SOURCE_DIR}/${relpath}")
+        continue()
+    endif()
+    file(READ "${SOURCE_DIR}/${relpath}" restore_text)
+    string(FIND "${restore_text}" "restoreBudget(" restore_position)
+    if(NOT restore_position EQUAL -1)
+        message("LAYERING VIOLATION: ${relpath} contains restoreBudget( -- only the Model and the store's load may use it")
+        math(EXPR violations "${violations} + 1")
+    endif()
+endforeach()
 
 if(violations GREATER 0)
     message(FATAL_ERROR "Layering check failed (${violations} violations).")
