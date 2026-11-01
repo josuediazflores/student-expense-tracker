@@ -315,6 +315,24 @@ TEST_CASE("a duplicate create, Cancel and Choose another category do not save") 
     CHECK(w.display.conflicts.size() == 2);
 }
 
+TEST_CASE("loadSaved clears a pending duplicate question, so a later Update existing does nothing") {
+    WiredWithStore w;
+    REQUIRE_FALSE(w.controller.createBudget("Meal plan", "300.00", kNov15, kDec15));
+    REQUIRE(w.display.conflicts.size() == 1);
+    REQUIRE(w.controller.loadSaved());
+    REQUIRE(w.model.budgets().size() == 1);
+    const Budget loaded = w.model.budgets().at(0);
+
+    CHECK_FALSE(w.controller.resolveBudgetConflict(ConflictChoice::UpdateExisting));
+
+    REQUIRE(w.model.budgets().size() == 1);
+    CHECK(w.model.budgets().at(0).category == loaded.category);
+    CHECK(w.model.budgets().at(0).amountCents == loaded.amountCents);
+    CHECK(w.model.budgets().at(0).startDate == loaded.startDate);
+    CHECK(w.model.budgets().at(0).endDate == loaded.endDate);
+    CHECK(w.fileIsUntouched());
+}
+
 TEST_CASE("Update existing saves the replacement through the store") {
     WiredWithStore w;
     REQUIRE_FALSE(w.controller.createBudget("Meal plan", "300.00", kNov15, kDec15));

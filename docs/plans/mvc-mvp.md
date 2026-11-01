@@ -695,3 +695,32 @@ This section covers the Part 3 revision of this plan only.
 6. **(LOW) Only the store may call `restoreBudget`.** A header comment says it is for the store's load only, and `tests/CheckLayering.cmake` fails if any src file other than BudgetModel.* and BudgetStore.cpp contains `restoreBudget(`.
 
 Destructive steps needing Huy's sign-off: none. The upgrade only adds a column and keeps a backup first.
+
+### Part 3 build progress and review triage (2026-11-01)
+
+- **Task 12 (tests):** 66 new cases in 5 new files. For D22, the schema-version literals in two branch-added test files moved from 1 to 2 and from 2 to 3; no assertion was weakened. Commit 428f637.
+- **Task 13:** Model 8f8cfd3, Controller afd4c58, Store 200b094. Out-of-source build in /tmp/mvc-build: 0 warnings; doctest 335/335 cases, 3235 assertions; ctest 2/2.
+- **Task 14:** View 2b3de0d, docs 22212ba. An offscreen harness with a temporary data file passed 17/17 checks, and the CTO viewed the screenshots of the three-button dialog and of one $300.00 Meal plan row next to a Groceries expense.
+- **Reviews (base 7bc4c71):**
+  - Code reviewer: APPROVE, with three MINOR findings and one NIT:
+    - The backup-failure path has no test.
+    - Nothing tests that `loadSaved` clears a pending question.
+    - A crash mid-backup could leave a partial file that is then trusted.
+    - NIT: REQUIREMENTS rows.
+  - Data review: SOUND. All six plan items confirmed by probing a throwaway v1 file with duplicates. One MEDIUM: an existing backup is trusted without being checked. A 0-byte or partial file, or a backup from an earlier failed upgrade, skips the real backup.
+  - clean-check: CLEAN. SHOULD items: `report()` also clears the pending question; the backup and the `restoreBudget` rule were not in Huy's request. NITs: line length, the column definition written twice, the `resolveBudgetConflict` contract comment.
+  - Security (diff): no LLM findings; gitleaks found no leaks; no new packages; semgrep p/c returned 0 results.
+
+**Fixing in round 1:**
+- **D23. Write the backup safely.**
+  - The backup is written to `<backup>.tmp`, then renamed to its final name, so a half-written copy never carries the real name.
+  - If `<path>.v1-backup.sqlite` already exists, the new backup goes to `<path>.v1-backup-<yyyyMMdd-HHmmss>.sqlite` instead of being skipped. So every upgrade attempt of a v1 file has a complete, current backup, and an existing backup is never overwritten.
+  - A leftover `.tmp` is deleted before writing.
+  - Why: the backup is the only way back to the old build, so it must be complete and current.
+- **Tests:**
+  - A backup failure: the load fails, the file stays v1, there is no backup file and no `.tmp`, and saving is refused.
+  - A pre-existing 0-byte backup leads to a new, valid timestamped v1 copy.
+  - `loadSaved` clears a pending question.
+- **Comment and docs:** the `resolveBudgetConflict` contract comment (true means the choice was carried out; false means nothing was pending or the update failed); the REQUIREMENTS rows.
+
+**Kept on purpose:** the backup and the `restoreBudget` layering rule. Both come from the data review's safety findings, not from feature creep. `report()` clearing the pending question is deliberate, because every action ends there.

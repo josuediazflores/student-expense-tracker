@@ -9,7 +9,10 @@
 #include "BudgetStore.h"
 #include "persistence_test_support.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QRegularExpression>
 
 #include <memory>
 
@@ -258,6 +261,113 @@ TEST_CASE("an existing backup is never overwritten by a later upgrade") {
     CHECK(model.budgets().size() == 2);
     CHECK(rawRows(backupPath(tmp.path()), kBudgetRows) == backupBefore);
     CHECK(rawInt(backupPath(tmp.path()), "SELECT COUNT(*) FROM budgets WHERE category = 'Food'") == 1);
+}
+
+// ---- Writing the backup safely (D23) -------------------------------------------------
+
+namespace {
+const QString kBackupFailed = QStringLiteral("A backup of the saved data could not be made: ");
+
+// Names in `dir` matching `pattern`, for finding timestamped backups and leftover temp files.
+QStringList filesMatching(const QString &dir, const QString &pattern) {
+    return QDir(dir).entryList({pattern}, QDir::Files | QDir::Hidden);
+}
+
+// A database file name short enough for its ".lock" and "-journal" files, but too long (the
+// limit is 255 characters on macOS and Linux) for ".v1-backup.sqlite" to be added. That makes
+// the backup fail on any machine. A read-only folder would also stop the store's lock file
+// and does nothing when the tests run as root.
+QString longDatabaseName() { return QString(243, QLatin1Char('a')); }
+}
+
+TEST_CASE("a backup that cannot be written fails the load, leaves the file version 1, and refuses saves") {
+    TempDir tmp;
+    const QString folder = tmp.dir.path();
+    const QString path = tmp.path(longDatabaseName());
+    REQUIRE(writeV1(path));
+    const QVector<QVariantList> budgetsBefore = rawRows(path, kBudgetRows);
+    const QVector<QVariantList> expensesBefore = rawRows(path, kExpenseRows);
+    BudgetStore store(path);
+    BudgetModel model;
+    QString error;
+
+    CHECK_FALSE(store.load(model, &error));
+
+    INFO("error was: ", error.toStdString());
+    CHECK(error.startsWith(kBackupFailed));
+    CHECK(model.budgets().isEmpty());
+    CHECK(userVersion(path) == 1);
+    CHECK(rawRows(path, kBudgetRows) == budgetsBefore);
+    CHECK(rawRows(path, kExpenseRows) == expensesBefore);
+    CHECK(rawInt(path, "SELECT COUNT(*) FROM pragma_table_info('expenses')") == 3);
+    CHECK(filesMatching(folder, QStringLiteral("*.v1-backup*")).isEmpty());
+    CHECK(filesMatching(folder, QStringLiteral("*.tmp")).isEmpty());
+
+    QString saveError;
+    CHECK_FALSE(store.save(model, &saveError));
+    CHECK(saveError == kBlocked);
+    CHECK(userVersion(path) == 1);
+    CHECK(rawRows(path, kBudgetRows) == budgetsBefore);
+}
+
+TEST_CASE("a 0-byte backup from an earlier crash is left alone and a new timestamped version 1 copy is made") {
+    TempDir tmp;
+    REQUIRE(writeV1(tmp.path()));
+    const QVector<QVariantList> budgetsBefore = rawRows(tmp.path(), kBudgetRows);
+    const QVector<QVariantList> expensesBefore = rawRows(tmp.path(), kExpenseRows);
+    {
+        QFile empty(backupPath(tmp.path()));
+        REQUIRE(empty.open(QIODevice::WriteOnly));
+    }
+    REQUIRE(QFileInfo(backupPath(tmp.path())).size() == 0);
+    BudgetStore store(tmp.path());
+    BudgetModel model;
+    QString error;
+
+    REQUIRE(store.load(model, &error));
+
+    CHECK(error.isEmpty());
+    CHECK(userVersion(tmp.path()) == 2);
+    CHECK(QFileInfo(backupPath(tmp.path())).size() == 0);
+    const QStringList copies =
+        filesMatching(tmp.dir.path(), QStringLiteral("budget.sqlite.v1-backup-*.sqlite"));
+    REQUIRE(copies.size() == 1);
+    CHECK(QRegularExpression(QStringLiteral(R"(\.v1-backup-\d{8}-\d{6}\.sqlite$)"))
+              .match(copies.at(0))
+              .hasMatch());
+    const QString copy = tmp.path(copies.at(0));
+    CHECK(userVersion(copy) == 1);
+    CHECK(rawRows(copy, kBudgetRows) == budgetsBefore);
+    CHECK(rawRows(copy, kExpenseRows) == expensesBefore);
+    CHECK(rawInt(copy, "SELECT COUNT(*) FROM pragma_table_info('expenses')") == 3);
+    CHECK(filesMatching(tmp.dir.path(), QStringLiteral("*.tmp")).isEmpty());
+}
+
+TEST_CASE("a leftover backup temp file from a crash does not block the backup and is removed") {
+    TempDir tmp;
+    REQUIRE(writeV1(tmp.path()));
+    const QVector<QVariantList> budgetsBefore = rawRows(tmp.path(), kBudgetRows);
+    const QVector<QVariantList> expensesBefore = rawRows(tmp.path(), kExpenseRows);
+    const QString leftover = backupPath(tmp.path()) + QStringLiteral(".tmp");
+    {
+        QFile half(leftover);
+        REQUIRE(half.open(QIODevice::WriteOnly));
+        half.write("half-written, not a database");
+    }
+    BudgetStore store(tmp.path());
+    BudgetModel model;
+    QString error;
+
+    REQUIRE(store.load(model, &error));
+
+    CHECK(error.isEmpty());
+    CHECK(userVersion(tmp.path()) == 2);
+    CHECK_FALSE(QFile::exists(leftover));
+    REQUIRE(QFile::exists(backupPath(tmp.path())));
+    CHECK(userVersion(backupPath(tmp.path())) == 1);
+    CHECK(rawRows(backupPath(tmp.path()), kBudgetRows) == budgetsBefore);
+    CHECK(rawRows(backupPath(tmp.path()), kExpenseRows) == expensesBefore);
+    CHECK(filesMatching(tmp.dir.path(), QStringLiteral("*.tmp")).isEmpty());
 }
 
 TEST_CASE("a version 1 file with a row the Model rejects fails to load and stays version 1") {
