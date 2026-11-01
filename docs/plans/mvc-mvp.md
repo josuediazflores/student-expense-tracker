@@ -507,3 +507,22 @@ Branch: `huy/mvc-mvp` (local only; no upstream set). Base commit: `ed49eb0` (ori
 |---|------|------|-------|--------------------|-----------|--------|
 | 10 | Failing store round-trip tests, controller persistence tests, layering rules for BudgetStore | team-test-author | sonnet | tests/test_budget_store.cpp, tests/test_controller_persistence.cpp, tests/CheckLayering.cmake | new tests fail only for the missing BudgetStore API; layering check fails only on the missing BudgetStore.h; existing tests untouched | pending |
 | 11 | BudgetStore + CMake + controller store wiring + main | team-implementer | opus | src/BudgetStore.h, src/BudgetStore.cpp, CMakeLists.txt, src/BudgetController.h, src/BudgetController.cpp, src/main.cpp, README.md, REQUIREMENTS.md | full build clean; ctest 100%; `otool -L test_build` has no QtWidgets; persistence row in REQUIREMENTS.md marked Done | pending |
+
+### Part 2 reviews and design corrections (2026-11-01)
+
+The earlier `## Security Review` covered Part 1 only. Part 2 results:
+- **Security (plan mode):** verdict.py printed `security:pass`. Two LLM findings were filtered and dropped below the bar:
+  - L1 scored 3/10. It said the plan carries earlier verdicts; that is answered by this scoping note.
+  - L2 scored 7/10. It is the same flaw as data finding 1 and is designed out below.
+- **Data review:** CHANGES NEEDED. One CRITICAL, three MEDIUM and three LOW findings; there is no stop condition. All seven are adopted into the contract below, which replaces the matching parts of the contract above.
+
+1. **CRITICAL: save after a failed load would wipe the saved file.** `BudgetStore` tracks `loaded_ = false`. `save` refuses unless the last `load` on this instance succeeded: it returns false with "Saved data could not be loaded, so changes are not being saved." This is enforced in the store, not only in the controller. Test: corrupt the file, load, add an expense, and confirm the file still holds its original rows. After this fix no destructive step remains, so Huy has nothing to sign off.
+2. **MEDIUM: schema version.** On `load`:
+   - `user_version` 0 with no tables: create both tables and set version 1 in one transaction (plain `CREATE TABLE`).
+   - Version 1: proceed.
+   - Any other version: fail with "Saved data is from a newer version." Saving stays blocked (finding 1).
+3. **MEDIUM: return values.** Check every `open`, `transaction`, `prepare`, `exec` and `commit` result. Roll back on any false, including a failed commit. Clear rows with `DELETE FROM`, never `DROP TABLE`. `error` carries the Qt driver text.
+4. **MEDIUM: connections.** The store keeps only a unique connection name (a static counter) and fetches `QSqlDatabase::database(name)` locally in each call. The destructor closes inside an inner scope, then calls `removeDatabase`. The file is opened in `load`/`save`, so open errors reach `error`. The SQLite plugin needs a `QCoreApplication`: `main.cpp` already creates `QApplication` first, and store tests create one in a test-file helper. `tests/test_main.cpp` is not edited.
+5. **LOW: dates.** Write and parse with the explicit format `"yyyy-MM-dd"`. `save` fails if a date does not round-trip.
+6. **LOW: order.** Use `position INTEGER PRIMARY KEY` in both tables and `ORDER BY position` in both SELECTs.
+7. **LOW: database checks.** `budgets`: `CHECK(amount_cents >= 0)` and `CHECK(length(category) > 0)`. `expenses`: `CHECK(typeof(amount_dollars) = 'text')`. Both amount columns are declared exactly `TEXT` or `INTEGER`; never use `NUMERIC`, which would turn "12.345" into a float.
