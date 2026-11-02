@@ -824,9 +824,9 @@ Verdict: **GO.** Deleting is small, fits the existing layers, and needs no schem
 
 | # | Task | Role | Model | Files it may touch | Done when | Status |
 |---|------|------|-------|--------------------|-----------|--------|
-| 15 | Failing tests for delete (cases listed below the table) | team-test-author | sonnet | tests/ (new files + branch-added files only) | new tests fail only for the missing API | pending |
-| 16 | Model + Display + Controller | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.* | test_build 0 warnings, doctest 0 failed, ctest 100% | pending |
-| 17 | View buttons, enable/disable and the confirmation box; README/REQUIREMENTS lines; offscreen harness on a temporary file with screenshots | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; harness PASS; screenshots | pending |
+| 15 | Failing tests for delete (cases listed below the table) | team-test-author | sonnet | tests/ (new files + branch-added files only) | new tests fail only for the missing API | done |
+| 16 | Model + Display + Controller | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.* | test_build 0 warnings, doctest 0 failed, ctest 100% | done |
+| 17 | View buttons, enable/disable and the confirmation box; README/REQUIREMENTS lines; offscreen harness on a temporary file with screenshots | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; harness PASS; screenshots | done |
 
 Task 15 covers:
 - Model removal: a valid delete, an invalid index, a middle row, exact spending after removal, and a budget delete that keeps expenses.
@@ -857,3 +857,23 @@ Open Question 6 (wording, default taken):
 - "Delete the … budget of … for … to …?" and "Delete the … expense of … on …?"
 - "Budget deleted.", "Expense deleted." and "Nothing was deleted."
 - The buttons "Delete budget", "Delete expense", "Delete" and "Cancel".
+
+### Part 4 build progress and review triage (2026-11-01)
+
+- **Task 15 (tests), ca52325:** 60 cases in tests/test_delete_model.cpp, test_delete_controller.cpp and test_delete_persistence.cpp. The fake display gained `askDeleteConfirmation`.
+- **Task 16:** Model ad2c950, Controller 3fe96ea. The shown-order helpers `shownBudgetOrder()` and `shownExpenseOrder()` are used by both `screen()` and the delete requests. doctest 399/399, 3945 assertions; 0 warnings; no store change was needed.
+- **Task 17:** View 159b19c, docs d64f118. The offscreen harness on a temporary file (scratchpad `p4shot/`) passed 26/26:
+  - The buttons are disabled with no selection and after a refresh.
+  - The box names "$50.00 for Nov 1, 2026 to Dec 1, 2026", with Cancel as the default. Cancel changes nothing.
+  - Delete leaves one Meal plan row at $250.00.
+  - The $100.00 expense, shown at row 1 rather than row 0, is the one removed.
+  - The deletes survive reopening the file.
+  - The CTO viewed delete-confirm.png and view.png.
+- **Reviews (base a118766):**
+  - Code reviewer: APPROVE, with three NITs: a return value not asserted in two stale-copy tests; the REQUIREMENTS row could mention that seven-day recovery isn't built; and the plan statuses, now fixed here.
+  - Data review: SOUND. All four plan items were confirmed. Probes through the real store: a reversed twin order deleted the named $50; a newest-first delete removed the right $100 among two $100s; spending moved exactly from $219.845 to $119.845; positions renumbered 0..n-1. One LOW: a failed save after a delete leaves the item in the file. The existing "Your change was not saved" warning covers this, as it does for every action.
+  - clean-check: CLEAN. SHOULD items: drop the "still the same item" guard (E2), and rename the `PendingDelete` fields (N1).
+  - Security (diff): no LLM findings; gitleaks found no leaks; no new packages; semgrep p/c returned 0 results.
+- **No fix round.** All findings are optional.
+  - The E2 suggestion is declined on purpose. The guard is the data review's adopted item 1. It costs a few lines, and it keeps a future change (say, a sorted table or a non-modal box) from deleting an item other than the one the box names.
+  - The NITs and N1 are left as follow-ups.
