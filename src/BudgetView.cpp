@@ -43,6 +43,13 @@ QTableWidget *makeTable(const QStringList &headers) {
     return table;
 }
 
+// The highlighted row, or -1. currentRow() can be set by keyboard focus or a Ctrl+click
+// deselect with nothing highlighted, so a destructive action must use the selection instead.
+int selectedRow(const QTableWidget *table) {
+    const QModelIndexList rows = table->selectionModel()->selectedRows();
+    return rows.isEmpty() ? -1 : rows.first().row();
+}
+
 void fillRow(QTableWidget *table, int row, const QStringList &values) {
     for (int col = 0; col < values.size(); ++col)
         table->setItem(row, col, new QTableWidgetItem(values.at(col)));
@@ -88,11 +95,17 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     budgetForm->addRow(QStringLiteral("End date"), endDate_);
     auto *addBudget = new QPushButton(QStringLiteral("Add budget"));
     auto *updateBudget = new QPushButton(QStringLiteral("Update selected budget"));
+    auto *deleteBudget = new QPushButton(QStringLiteral("Delete budget"));
+    deleteBudget->setEnabled(false);
     connect(addBudget, &QPushButton::clicked, this, [this] { saveBudget(); });
     connect(updateBudget, &QPushButton::clicked, this, [this] { updateSelectedBudget(); });
+    connect(deleteBudget, &QPushButton::clicked, this, [this] {
+        controller_.requestDeleteBudget(selectedRow(budgetsTable_));
+    });
     auto *budgetButtons = new QHBoxLayout;
     budgetButtons->addWidget(addBudget);
     budgetButtons->addWidget(updateBudget);
+    budgetButtons->addWidget(deleteBudget);
     budgetForm->addRow(budgetButtons);
 
     expenseCategory_ = makeCategoryPicker();
@@ -106,8 +119,16 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     expenseForm->addRow(QStringLiteral("Amount ($)"), expenseAmount_);
     expenseForm->addRow(QStringLiteral("Date"), expenseDate_);
     auto *saveExpenseButton = new QPushButton(QStringLiteral("Save expense"));
+    auto *deleteExpense = new QPushButton(QStringLiteral("Delete expense"));
+    deleteExpense->setEnabled(false);
     connect(saveExpenseButton, &QPushButton::clicked, this, [this] { saveExpense(); });
-    expenseForm->addRow(saveExpenseButton);
+    connect(deleteExpense, &QPushButton::clicked, this, [this] {
+        controller_.requestDeleteExpense(selectedRow(expensesTable_));
+    });
+    auto *expenseButtons = new QHBoxLayout;
+    expenseButtons->addWidget(saveExpenseButton);
+    expenseButtons->addWidget(deleteExpense);
+    expenseForm->addRow(expenseButtons);
 
     auto *forms = new QHBoxLayout;
     forms->addWidget(budgetBox, 3);
@@ -127,6 +148,12 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     expensesTable_ = makeTable({QStringLiteral("Date"), QStringLiteral("Category"),
                                  QStringLiteral("Amount")});
     layout->addWidget(expensesTable_);
+
+    // A delete button works only on a highlighted row.
+    connect(budgetsTable_, &QTableWidget::itemSelectionChanged, this,
+            [this, deleteBudget] { deleteBudget->setEnabled(selectedRow(budgetsTable_) >= 0); });
+    connect(expensesTable_, &QTableWidget::itemSelectionChanged, this,
+            [this, deleteExpense] { deleteExpense->setEnabled(selectedRow(expensesTable_) >= 0); });
 }
 
 void BudgetView::saveBudget() {
@@ -136,11 +163,8 @@ void BudgetView::saveBudget() {
 }
 
 void BudgetView::updateSelectedBudget() {
-    // currentRow() can be set by keyboard focus or a Ctrl+click deselect with nothing highlighted,
-    // so use the selected row to avoid overwriting a budget the student never picked.
-    const QModelIndexList rows = budgetsTable_->selectionModel()->selectedRows();
-    const int row = rows.isEmpty() ? -1 : rows.first().row();
-    controller_.updateBudgetAmount(row, budgetAmount_->text());
+    // Not currentRow(): see selectedRow.
+    controller_.updateBudgetAmount(selectedRow(budgetsTable_), budgetAmount_->text());
 }
 
 void BudgetView::saveExpense() {
@@ -153,6 +177,10 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
     totalBudget_->setText(QStringLiteral("Total budget: %1").arg(screen.totalBudget));
     totalSpending_->setText(QStringLiteral("Total spending: %1").arg(screen.totalSpending));
     remaining_->setText(QStringLiteral("Remaining budget: %1").arg(screen.remaining));
+
+    // Rows may have moved or gone, so a delete must not act on a stale highlight.
+    budgetsTable_->clearSelection();
+    expensesTable_->clearSelection();
 
     budgetsTable_->setRowCount(screen.budgets.size());
     for (int row = 0; row < screen.budgets.size(); ++row) {
@@ -200,4 +228,27 @@ void BudgetView::showBudgetConflict(const QString &message) {
     } else {
         controller_.resolveBudgetConflict(ConflictChoice::Cancel);
     }
+}
+
+void BudgetView::askDeleteConfirmation(const QString &message) {
+    // Queued so the controller's requestDelete has returned before the box's event loop starts.
+    QMetaObject::invokeMethod(this, [this, message] { showDeleteConfirmation(message); },
+                              Qt::QueuedConnection);
+}
+
+void BudgetView::showDeleteConfirmation(const QString &message) {
+    QMessageBox box(this);
+    box.setIcon(QMessageBox::Question);
+    box.setWindowTitle(QStringLiteral("Confirm delete"));
+    box.setText(message);
+    QPushButton *del = box.addButton(QStringLiteral("Delete"), QMessageBox::DestructiveRole);
+    QPushButton *cancel = box.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+    // Cancel is the default so a stray Enter cannot delete; there is no undo.
+    box.setDefaultButton(cancel);
+    box.setEscapeButton(cancel);
+    box.exec();
+
+    // Closing the box without a button counts as Cancel.
+    controller_.resolveDelete(box.clickedButton() == del ? DeleteChoice::Delete
+                                                         : DeleteChoice::Cancel);
 }
