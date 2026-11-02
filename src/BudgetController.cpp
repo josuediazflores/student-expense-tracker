@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <numeric>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -45,8 +46,9 @@ void BudgetController::setDisplay(BudgetDisplay *display) {
 void BudgetController::setStore(BudgetStore *store) { store_ = store; }
 
 bool BudgetController::loadSaved() {
-    // The pending index points into the model this load replaces.
+    // The pending indices point into the model this load replaces.
     pending_.reset();
+    pendingDelete_.reset();
     if (!store_) return true;
     QString error;
     if (!store_->load(model_, &error)) {
@@ -66,13 +68,30 @@ BudgetScreen BudgetController::screen() const {
 
     // Per day is display-only and keeps the existing rounded-currency behaviour.
     const QLocale usEnglish(QLocale::English, QLocale::UnitedStates);
-    for (const Budget &budget : model_.budgets()) {
+    for (qsizetype index : shownBudgetOrder()) {
+        const Budget &budget = model_.budgets().at(index);
         result.budgets.append({budget.category, formatMoney(DecimalCents(budget.amountCents)),
                                formatDate(budget.startDate) + QStringLiteral(" to ") +
                                    formatDate(budget.endDate),
                                usEnglish.toCurrencyString(budget.amountPerDay())});
     }
 
+    for (qsizetype index : shownExpenseOrder()) {
+        const Expense &expense = model_.expenses().at(index);
+        result.expenses.append({formatDate(expense.date), formatMoney(expense.amountCents),
+                                expense.category.isEmpty() ? QStringLiteral("Uncategorized")
+                                                           : expense.category});
+    }
+    return result;
+}
+
+QVector<qsizetype> BudgetController::shownBudgetOrder() const {
+    QVector<qsizetype> order(model_.budgets().size());
+    std::iota(order.begin(), order.end(), 0);
+    return order;
+}
+
+QVector<qsizetype> BudgetController::shownExpenseOrder() const {
     // Newest date first; on the same date the later entry (higher index) comes first.
     const QVector<Expense> &expenses = model_.expenses();
     QVector<qsizetype> order(expenses.size());
@@ -82,13 +101,7 @@ BudgetScreen BudgetController::screen() const {
         const QDate &dateB = expenses.at(b).date;
         return dateA != dateB ? dateA > dateB : a > b;
     });
-    for (qsizetype index : order) {
-        const Expense &expense = expenses.at(index);
-        result.expenses.append({formatDate(expense.date), formatMoney(expense.amountCents),
-                                expense.category.isEmpty() ? QStringLiteral("Uncategorized")
-                                                           : expense.category});
-    }
-    return result;
+    return order;
 }
 
 bool BudgetController::createBudget(const QString &category, const QString &amountText,
@@ -101,6 +114,8 @@ bool BudgetController::createBudget(const QString &category, const QString &amou
     if (conflictIndex < 0) return report(added, error, QStringLiteral("Budget added."));
 
     // Nothing changed, so nothing is saved; the display's answer decides what happens next.
+    // Only one question is open at a time, so this one replaces a pending delete.
+    pendingDelete_.reset();
     pending_ = PendingBudget{conflictIndex, category, *cents, startDate, endDate};
     const Budget &existing = model_.budgets().at(conflictIndex);
     if (display_) {
@@ -150,13 +165,93 @@ bool BudgetController::addExpense(const QString &amountText, const QDate &date,
     return report(saved, error, QStringLiteral("Expense saved."));
 }
 
+bool BudgetController::requestDeleteBudget(int shownRow) {
+    if (pendingDelete_) return false;  // the first question stays the one being answered
+    const QVector<qsizetype> order = shownBudgetOrder();
+    if (shownRow < 0 || shownRow >= order.size())
+        return report(false, QStringLiteral("Choose a budget to delete."), QString());
+
+    const qsizetype index = order.at(shownRow);
+    const Budget &budget = model_.budgets().at(index);
+    return askDelete(*deleteCandidate(PendingDelete::Kind::Budget, index),
+                     QStringLiteral("Delete the %1 budget of %2 for %3 to %4?")
+                         .arg(budget.category, formatMoney(DecimalCents(budget.amountCents)),
+                              formatDate(budget.startDate), formatDate(budget.endDate)));
+}
+
+bool BudgetController::requestDeleteExpense(int shownRow) {
+    if (pendingDelete_) return false;  // the first question stays the one being answered
+    const QVector<qsizetype> order = shownExpenseOrder();
+    if (shownRow < 0 || shownRow >= order.size())
+        return report(false, QStringLiteral("Choose an expense to delete."), QString());
+
+    const qsizetype index = order.at(shownRow);
+    const Expense &expense = model_.expenses().at(index);
+    return askDelete(*deleteCandidate(PendingDelete::Kind::Expense, index),
+                     QStringLiteral("Delete the %1 expense of %2 on %3?")
+                         .arg(expense.category.isEmpty() ? QStringLiteral("uncategorized")
+                                                         : expense.category,
+                              formatMoney(expense.amountCents), formatDate(expense.date)));
+}
+
+bool BudgetController::resolveDelete(DeleteChoice choice) {
+    const std::optional<PendingDelete> pending = std::exchange(pendingDelete_, std::nullopt);
+    // A copy that no longer matches means the item moved, so deleting by index could
+    // remove something the user never confirmed.
+    const auto stillAtIndex = [this](const PendingDelete &named) {
+        const auto fields = [](const PendingDelete &item) {
+            return std::tie(item.category, item.amountCents, item.startDate, item.endDate);
+        };
+        const std::optional<PendingDelete> current = deleteCandidate(named.kind, named.index);
+        return current && fields(*current) == fields(named);
+    };
+    const bool cancelled = pending && choice == DeleteChoice::Cancel;
+    if (!pending || cancelled || !stillAtIndex(*pending)) {
+        if (display_) display_->showMessage(QStringLiteral("Nothing was deleted."), false);
+        return cancelled;
+    }
+
+    QString error;
+    if (pending->kind == PendingDelete::Kind::Budget) {
+        const bool removed = model_.removeBudget(pending->index, &error);
+        return report(removed, error, QStringLiteral("Budget deleted."));
+    }
+    const bool removed = model_.removeExpense(pending->index, &error);
+    return report(removed, error, QStringLiteral("Expense deleted."));
+}
+
+std::optional<BudgetController::PendingDelete>
+BudgetController::deleteCandidate(PendingDelete::Kind kind, qsizetype index) const {
+    if (kind == PendingDelete::Kind::Budget) {
+        if (index < 0 || index >= model_.budgets().size()) return std::nullopt;
+        const Budget &budget = model_.budgets().at(index);
+        return PendingDelete{kind, index, budget.category,
+                             DecimalCents(budget.amountCents).toString(), budget.startDate,
+                             budget.endDate};
+    }
+    if (index < 0 || index >= model_.expenses().size()) return std::nullopt;
+    const Expense &expense = model_.expenses().at(index);
+    return PendingDelete{kind, index, expense.category, expense.amountCents.toString(),
+                         expense.date, QDate()};
+}
+
+// Nothing changes until the display's answer comes back through resolveDelete.
+bool BudgetController::askDelete(const PendingDelete &candidate, const QString &question) {
+    // Only one question is open at a time, so this one replaces a pending duplicate question.
+    pending_.reset();
+    pendingDelete_ = candidate;
+    if (display_) display_->askDeleteConfirmation(question);
+    return true;
+}
+
 // On success, saves the change, then shows the new screen and a confirmation, or the save
 // error. A failed save does not undo the change, so the action still succeeds. On failure,
 // nothing is saved and only the error is shown.
 bool BudgetController::report(bool succeeded, const QString &error,
                               const QString &successMessage) {
-    // Every action ends here, and any action ends a pending duplicate question.
+    // Every action ends here, and any action ends a pending question.
     pending_.reset();
+    pendingDelete_.reset();
     if (!succeeded) {
         if (display_) display_->showMessage(error, true);
         return false;

@@ -28,6 +28,9 @@ struct BudgetScreen {
 // The user's answer to a duplicate-budget question.
 enum class ConflictChoice { UpdateExisting, ChooseAnotherCategory, Cancel };
 
+// The user's answer to a delete confirmation.
+enum class DeleteChoice { Delete, Cancel };
+
 // The controller pushes updates through this interface; the Model never sees it.
 class BudgetDisplay {
 public:
@@ -37,4 +40,7 @@ public:
     // Asks how to handle a budget that clashes with an existing one. The answer comes back
     // later through BudgetController::resolveBudgetConflict.
     virtual void askBudgetConflict(const QString &message) = 0;
+    // Asks the user to confirm deleting the item the message names. The answer comes back
+    // later through BudgetController::resolveDelete.
+    virtual void askDeleteConfirmation(const QString &message) = 0;
 };
