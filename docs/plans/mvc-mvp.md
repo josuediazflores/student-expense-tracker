@@ -834,6 +834,24 @@ Task 15 covers:
 - Persistence: a round trip, a middle row, and the duplicate Meal plan case.
 - The fake display gains `askDeleteConfirmation`.
 
+### Part 4 plan reviews (2026-11-01)
+
+This section covers the Part 4 revision only.
+- **Security (plan mode):** `security:pass`. The LLM's only finding was the recurring L1 (the plan's recorded review history), filtered at 3/10.
+- **Data review:** SOUND. No CRITICAL or HIGH finding. The reviewer confirmed:
+  - The newest-first order is strict, including same-date ties.
+  - Spending stays exact after a removal.
+  - The full-rewrite save renumbers positions with no gaps.
+  - After a failed load there is nothing to delete, and saving stays refused.
+
+Adopted (these override D26 and the task 15 cases where they differ):
+1. **(MEDIUM) No second request while a delete is pending.** `requestDelete…` refuses a new request while one is pending: it returns false, shows nothing new, and keeps the first. The pending delete also keeps a copy of the item it names. `resolveDelete(Delete)` removes the item only if the item at the stored index still matches that copy; otherwise it removes nothing and shows ("Nothing was deleted.", false). Test: two requests, then Delete, removes only the first item named.
+2. **(MEDIUM) Tests that can tell twins apart.** The duplicate test uses Huy's real case: Meal plan $50 and $250, Nov 1–Dec 1, 2026. It deletes the $50 one and checks that the $250 one remains, also after a reload. The newest-first test uses two same-date expenses with different amounts, plus an older-dated expense entered last.
+3. **(LOW) A stale answer still gets feedback.** `resolveDelete` with nothing pending shows ("Nothing was deleted.", false) and returns false.
+4. **(LOW) Reloading clears a pending delete.** `loadSaved` and `report()` clear both pending requests. Test: request, `loadSaved`, then Delete does nothing.
+
+Destructive steps needing Huy's sign-off: none beyond the confirmation dialog. There is no schema change. Delete has no undo, and a v2 file gets no automatic backup. **Huy to run before cleaning up his real file** (a one-time copy): `cp ~/Library/Application\ Support/SCU\ Student\ Budget/budget.sqlite ~/Desktop/budget-before-delete.sqlite`
+
 Open Question 6 (wording, default taken):
 - "Choose a budget to delete." and "Choose an expense to delete."
 - "Delete the … budget of … for … to …?" and "Delete the … expense of … on …?"
