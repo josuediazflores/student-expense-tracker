@@ -1,5 +1,4 @@
-// Part 4, task 15: deleting budgets and expenses through the Controller
-// (docs/plans/mvc-mvp.md, D25 and D26, and "Part 4 plan reviews" items 1 to 4). A request asks
+// Deleting budgets and expenses through the Controller. A request asks
 // the display one question, resolveDelete carries out the answer, and the row the user
 // clicked (newest first for expenses) must map to the right Model item. A fake display
 // records everything.

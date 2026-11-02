@@ -1,5 +1,4 @@
-// Part 3, task 12: the duplicate-budget guard in the Model (docs/plans/mvc-mvp.md, D15-D18 and
-// Part 3 plan review items 5 and 6). addBudget rejects a same-category overlap and says which
+// The duplicate-budget guard in the Model. addBudget rejects a same-category overlap and says which
 // budget it clashes with, replaceBudget swaps a budget in place, and restoreBudget keeps data
 // that was saved before the rule existed.
 #include "doctest.h"

@@ -1,4 +1,4 @@
-// Part 3, task 12: the expense category (docs/plans/mvc-mvp.md, D21). The Model records a
+// The expense category. The Model records a
 // trimmed category with an expense, the old overloads record none, and the Controller shows
 // an empty category as "Uncategorized".
 #include "doctest.h"

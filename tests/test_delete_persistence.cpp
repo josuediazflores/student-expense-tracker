@@ -1,5 +1,4 @@
-// Part 4, task 15: a delete is saved through the store the controller is wired to
-// (docs/plans/mvc-mvp.md, D28). Every test uses a temporary file. A delete must survive a
+// A delete is saved through the store the controller is wired to. Every test uses a temporary file. A delete must survive a
 // reload with the right item gone and the order kept; Cancel, a bad row, a stale answer and
 // a plain request must not write to the file at all.
 #include "doctest.h"

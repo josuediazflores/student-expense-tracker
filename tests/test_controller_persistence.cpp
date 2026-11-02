@@ -1,6 +1,6 @@
 // Author: Huy Tran
 // The controller saves after every successful action and loads saved data on start-up.
-// Contract: docs/plans/mvc-mvp.md (Part 2). A fake display records what the user would see,
+// A fake display records what the user would see,
 // and a second store plus a raw SQL look at the file prove what was really written.
 #include "doctest.h"
 

@@ -1,5 +1,4 @@
-// Part 3, task 12: the conflict prompt in the Controller (docs/plans/mvc-mvp.md, D19). A
-// duplicate createBudget does not add or save; it asks the display one question, and
+// The conflict prompt in the Controller. A duplicate createBudget does not add or save; it asks the display one question, and
 // resolveBudgetConflict carries out the user's answer. A fake display records everything.
 #include "doctest.h"
 

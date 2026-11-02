@@ -1,5 +1,5 @@
-// Part 3, task 12: saving the expense category as schema version 2, and upgrading a version 1
-// file safely (docs/plans/mvc-mvp.md, D22 and Part 3 plan review items 1 to 4). The version 1
+// Saving the expense category as schema version 2, and upgrading a version 1 file safely.
+// The version 1
 // file here is built with raw SQL, the way the app wrote it before this change, and holds the
 // two identical "Meal plan" rows that Huy's real file has.
 #include "doctest.h"

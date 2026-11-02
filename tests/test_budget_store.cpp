@@ -1,6 +1,6 @@
 // Author: Huy Tran
 // BudgetStore saves a BudgetModel to a SQLite file and loads it back. These tests pin the
-// contract from docs/plans/mvc-mvp.md (Part 2): an exact round trip, a missing file as an
+// contract: an exact round trip, a missing file as an
 // empty start, and above all that a failed load can never let a later save overwrite the
 // student's saved file.
 #include "doctest.h"

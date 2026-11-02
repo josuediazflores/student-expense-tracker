@@ -1,4 +1,4 @@
-// Part 4, task 15: removing budgets and expenses in the Model (docs/plans/mvc-mvp.md, D24).
+// Removing budgets and expenses in the Model.
 // removeBudget / removeExpense take the Model's own index, keep the order of what is left,
 // and change nothing when the index is out of range.
 #include "doctest.h"
