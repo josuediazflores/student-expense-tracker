@@ -101,3 +101,4 @@ The walking skeleton proves the full path from the Qt user interface through the
 | Show a daily amount for each budget | Done (from the later daily-limit requirement) |
 | Pick a category for each expense | Done in the GUI. The expense list shows the category. |
 | Prevent a second budget for the same category and dates | Done. Adding a budget that clashes with an existing one asks whether to update the existing budget, choose another category, or cancel. |
+| Delete a budget or an expense | Done in the GUI: select a row and click Delete budget or Delete expense, then confirm. There is no undo. |
