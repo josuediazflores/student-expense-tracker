@@ -16,9 +16,7 @@ namespace {
 // Exact dollars from exact cents: "$1,234.50", "$12.345", "-$0.005". Shifting the
 // decimal point in digits keeps fractions of a cent that a double would round.
 QString formatMoney(const DecimalCents &cents) {
-    // A DecimalCents string is always valid decimal text, so value() cannot throw.
-    QString dollars =
-        DecimalCents::fromDecimal(cents.toString() + QStringLiteral("e-2")).value().toString();
+    QString dollars = cents.toDollarsString();
     const bool negative = dollars.startsWith(QLatin1Char('-'));
     if (negative) dollars.remove(0, 1);
 
@@ -111,7 +109,7 @@ bool BudgetController::createBudget(const QString &category, const QString &amou
     const std::optional<qint64> cents = BudgetModel::parseBudgetAmount(amountText, &error);
     const bool added =
         cents && model_.addBudget({category, *cents, startDate, endDate}, &error, &conflictIndex);
-    if (conflictIndex < 0) return report(added, error, QStringLiteral("Budget added."));
+    if (conflictIndex < 0) return commitAndShow(added, error, QStringLiteral("Budget added."));
 
     // Nothing changed, so nothing is saved; the display's answer decides what happens next.
     // Only one question is open at a time, so this one replaces a pending delete.
@@ -138,7 +136,7 @@ bool BudgetController::resolveBudgetConflict(ConflictChoice choice) {
             pending->conflictIndex,
             {pending->category, pending->amountCents, pending->startDate, pending->endDate},
             &error);
-        return report(replaced, error, QStringLiteral("Budget updated."));
+        return commitAndShow(replaced, error, QStringLiteral("Budget updated."));
     }
     case ConflictChoice::ChooseAnotherCategory:
         if (display_)
@@ -155,21 +153,21 @@ bool BudgetController::updateBudgetAmount(int row, const QString &amountText) {
     QString error;
     const std::optional<qint64> cents = BudgetModel::parseBudgetAmount(amountText, &error);
     const bool updated = cents && model_.updateBudgetAmount(row, *cents, &error);
-    return report(updated, error, QStringLiteral("Budget amount updated."));
+    return commitAndShow(updated, error, QStringLiteral("Budget amount updated."));
 }
 
 bool BudgetController::addExpense(const QString &amountText, const QDate &date,
                                   const QString &category) {
     QString error;
     const bool saved = model_.addExpense(amountText, date, category, &error);
-    return report(saved, error, QStringLiteral("Expense saved."));
+    return commitAndShow(saved, error, QStringLiteral("Expense saved."));
 }
 
 bool BudgetController::requestDeleteBudget(int shownRow) {
     if (pendingDelete_) return false;  // the first question stays the one being answered
     const QVector<qsizetype> order = shownBudgetOrder();
     if (shownRow < 0 || shownRow >= order.size())
-        return report(false, QStringLiteral("Choose a budget to delete."), QString());
+        return commitAndShow(false, QStringLiteral("Choose a budget to delete."), QString());
 
     const qsizetype index = order.at(shownRow);
     const Budget &budget = model_.budgets().at(index);
@@ -183,7 +181,7 @@ bool BudgetController::requestDeleteExpense(int shownRow) {
     if (pendingDelete_) return false;  // the first question stays the one being answered
     const QVector<qsizetype> order = shownExpenseOrder();
     if (shownRow < 0 || shownRow >= order.size())
-        return report(false, QStringLiteral("Choose an expense to delete."), QString());
+        return commitAndShow(false, QStringLiteral("Choose an expense to delete."), QString());
 
     const qsizetype index = order.at(shownRow);
     const Expense &expense = model_.expenses().at(index);
@@ -214,10 +212,10 @@ bool BudgetController::resolveDelete(DeleteChoice choice) {
     QString error;
     if (pending->kind == PendingDelete::Kind::Budget) {
         const bool removed = model_.removeBudget(pending->index, &error);
-        return report(removed, error, QStringLiteral("Budget deleted."));
+        return commitAndShow(removed, error, QStringLiteral("Budget deleted."));
     }
     const bool removed = model_.removeExpense(pending->index, &error);
-    return report(removed, error, QStringLiteral("Expense deleted."));
+    return commitAndShow(removed, error, QStringLiteral("Expense deleted."));
 }
 
 std::optional<BudgetController::PendingDelete>
@@ -247,7 +245,7 @@ bool BudgetController::askDelete(const PendingDelete &candidate, const QString &
 // On success, saves the change, then shows the new screen and a confirmation, or the save
 // error. A failed save does not undo the change, so the action still succeeds. On failure,
 // nothing is saved and only the error is shown.
-bool BudgetController::report(bool succeeded, const QString &error,
+bool BudgetController::commitAndShow(bool succeeded, const QString &error,
                               const QString &successMessage) {
     // Every action ends here, and any action ends a pending question.
     pending_.reset();

@@ -1,10 +1,13 @@
 // Author: Huy Tran
 // Shared helpers for the persistence tests: a QCoreApplication (the SQLite driver plugin
 // needs one), raw SQL access to a database file that bypasses BudgetStore, and a fake
-// display. Everything is inline so two test files can include this header.
+// display. Everything is inline so several test files can include this header.
 #pragma once
 
 #include "BudgetDisplay.h"
+#include "BudgetModel.h"
+#include "BudgetStore.h"
+#include "doctest.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -138,5 +141,13 @@ public:
     // delete confirmation question, in call order
     std::vector<char> events;
 };
+
+// Reads the file with a fresh store and model, like reopening the application.
+inline BudgetModel reopen(const QString &path) {
+    BudgetStore store(path);
+    BudgetModel model;
+    REQUIRE(store.load(model));
+    return model;
+}
 
 }  // namespace persistence_test

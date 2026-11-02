@@ -101,18 +101,13 @@ qint64 BudgetModel::totalCents() const {
 }
 
 bool BudgetModel::updateBudgetAmount(qsizetype index, qint64 amountCents, QString *error) {
-    auto reject = [error](const QString &message) {
-        if (error) *error = message;
+    if (index < 0 || index >= budgets_.size()) {
+        if (error) *error = QStringLiteral("Choose a budget to update.");
         return false;
-    };
-    if (index < 0 || index >= budgets_.size())
-        return reject(QStringLiteral("Choose a budget to update."));
-    if (amountCents < 0)
-        return reject(QStringLiteral("Budget amount cannot be negative."));
-    // Compare against the other budgets' total so the check itself cannot overflow.
-    const qint64 otherBudgetsCents = totalCents() - budgets_.at(index).amountCents;
-    if (amountCents > std::numeric_limits<qint64>::max() - otherBudgetsCents)
-        return reject(QStringLiteral("Total budget is too large."));
+    }
+    Budget updated = budgets_.at(index);
+    updated.amountCents = amountCents;
+    if (!checkBudget(updated, totalCents() - budgets_.at(index).amountCents, error)) return false;
 
     budgets_[index].amountCents = amountCents;
     if (error) error->clear();
@@ -140,7 +135,7 @@ std::optional<qint64> BudgetModel::parseBudgetAmount(const QString &amountDollar
         return reject(QStringLiteral("Enter a decimal dollar amount such as 12.99."));
 
     // Validated decimal text always parses; value() only guards that invariant.
-    const QString cents = DecimalCents::fromDecimal(text + QStringLiteral("e2")).value().toString();
+    const QString cents = DecimalCents::fromDollars(text).value().toString();
     // Judged on the normalized value, so "12.340" is whole cents and "12.345" is not.
     if (cents.contains(QLatin1Char('.')))
         return reject(QStringLiteral("Budget amount must be in whole cents."));
@@ -182,7 +177,7 @@ bool BudgetModel::addExpense(const QString &amountDollars, const QDate &date,
     }
 
     // Shift dollar digits into cents: "12.345" -> 1234.5 cents, without rounding.
-    const auto cents = DecimalCents::fromDecimal(text + QStringLiteral("e2"));
+    const auto cents = DecimalCents::fromDollars(text);
     if (!cents) {
         if (error) *error = QStringLiteral("Expense amount cannot be represented.");
         return false;

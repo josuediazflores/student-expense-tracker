@@ -76,14 +76,6 @@ struct App {
     QVector<QVariantList> marked;
 };
 
-// Reads the file with a fresh store and model, like reopening the application.
-BudgetModel reopen(const QString &path) {
-    BudgetStore store(path);
-    BudgetModel model;
-    REQUIRE(store.load(model));
-    return model;
-}
-
 QStringList amounts(const BudgetModel &model) {
     QStringList result;
     for (const Expense &expense : model.expenses()) result.append(expense.amountCents.toString());

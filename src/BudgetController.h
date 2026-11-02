@@ -43,7 +43,7 @@ public:
     bool resolveDelete(DeleteChoice choice);
 
 private:
-    bool report(bool succeeded, const QString &error, const QString &successMessage);
+    bool commitAndShow(bool succeeded, const QString &error, const QString &successMessage);
     // Model indices in the order the screen shows them, so a shown row maps to its item.
     QVector<qsizetype> shownBudgetOrder() const;
     QVector<qsizetype> shownExpenseOrder() const;

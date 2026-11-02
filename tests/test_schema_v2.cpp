@@ -89,12 +89,6 @@ struct App {
     }
 };
 
-BudgetModel reopen(const QString &path) {
-    BudgetStore store(path);
-    BudgetModel model;
-    REQUIRE(store.load(model));
-    return model;
-}
 }
 
 // ---- A new file is version 2 ---------------------------------------------------------

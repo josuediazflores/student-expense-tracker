@@ -45,14 +45,6 @@ struct App {
     }
 };
 
-// Reads the file with a fresh store and model, like reopening the application.
-BudgetModel reopen(const QString &path) {
-    BudgetStore store(path);
-    BudgetModel model;
-    REQUIRE(store.load(model));
-    return model;
-}
-
 // Marks the saved budget row so a later save would visibly overwrite it.
 void markFile(const QString &path) {
     REQUIRE(rawExec(path, {QStringLiteral("UPDATE budgets SET category = 'Marker'")}));

@@ -189,14 +189,9 @@ bool writeExpenses(QSqlDatabase &db, const QVector<Expense> &expenses, QString *
         const std::optional<QString> date = dateText(expense.date);
         if (!date)
             return fail(error, QStringLiteral("An expense date cannot be saved as yyyy-MM-dd."));
-        // Exact dollar text, so 1234.5 cents is stored as "12.345". A DecimalCents string
-        // is always valid decimal text, so value() cannot throw.
-        const QString dollars =
-            DecimalCents::fromDecimal(expense.amountCents.toString() + QStringLiteral("e-2"))
-                .value()
-                .toString();
         insert.bindValue(0, static_cast<qint64>(i));
-        insert.bindValue(1, dollars);
+        // Exact dollar text, so 1234.5 cents is stored as "12.345".
+        insert.bindValue(1, expense.amountCents.toDollarsString());
         insert.bindValue(2, *date);
         // Qt binds a null QString as SQL NULL, so "uncategorized" is written as ''.
         insert.bindValue(3, expense.category.isNull() ? QStringLiteral("") : expense.category);
