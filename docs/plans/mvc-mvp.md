@@ -877,3 +877,37 @@ Open Question 6 (wording, default taken):
 - **No fix round.** All findings are optional.
   - The E2 suggestion is declined on purpose. The guard is the data review's adopted item 1. It costs a few lines, and it keeps a future change (say, a sorted table or a non-modal box) from deleting an item other than the one the box names.
   - The NITs and N1 are left as follow-ups.
+
+### Trial (Part 4)
+
+2026-11-01, base `a118766`.
+- **Falsifier (at 5c3a140): INCONCLUSIVE.** Nothing was falsified, and every mutation was caught. It found one plan deviation: after deleting the bottom row, Qt re-highlighted the row above and the delete button stayed enabled, contradicting D27.
+- **Fix round 1, 35285cb:** clear the selection model after the table refill. Probe case B went from `selectedRows=1 ... buttonEnabled=1` to `selectedRows=0 ... buttonEnabled=0`. The p4shot harness still passed 26/26.
+- **Advocate (at 5c3a140): STRONG.** About 9 mutations, all caught.
+- **Judge (at 35285cb): INSUFFICIENT EVIDENCE**, on one item only: "don't touch Huy's real file". The team is forbidden to look at that file, so only a code trace exists (AppDataLocation is used only by src/main.cpp; every test, harness and probe uses QTemporaryDir).
+  - Every other requirement is MET. The judge re-ran probe case B at HEAD, the harness (26/26), and two of its own mutations (row mapping: 5 tests failed; twin: 4 tests failed).
+  - Claims audit: all BACKED, except the semgrep and LLM parts (not re-run) and the real file (not checkable).
+- **Not verified: Huy to check.** His real file should still hold both Meal plan budgets ($50 and $250, Nov 1–Dec 1, 2026) and the $100 expense. No agent can run this check, so per the trial procedure it ships as an open item rather than another round.
+- **Stray file.** An untracked, empty schema-v2 SQLite file named `-s` appeared in the repo root at 20:42, during the review agents' runs. Its origin is unproven. It is not committed; everything is staged by explicit path. Huy should delete it, and nobody should run `git add -A` while it exists.
+
+### Final check (CTO, Part 4)
+
+Fresh build in /tmp/final-p4.
+- Build: 0 warnings or errors.
+- ctest: test_build and layering Passed, 100% of 2.
+- doctest: 399 test cases and 3945 assertions, 0 failed.
+- No teammate test file from `ed49eb0` was modified. 9 commits since `a118766`; no upstream.
+
+### Retro (Part 4)
+
+- **Agents:**
+  - Plan reviews: security 2, data 1.
+  - Tests: test-author 1.
+  - Building: implementer 3.
+  - Code reviews: reviewer 1, clean-code 1, data 1, security 1.
+  - Trial: falsifier, advocate and judge.
+- **Fix rounds:** 1 (the bottom-row selection).
+- **What went well:** the data review's "twins must be distinguishable" item made the tests able to catch a wrong-row delete, which the mutations then proved.
+- **What I'd brief differently:**
+  - Ask the View implementer's harness to delete the bottom row specifically. It's the edge case where Qt moves the selection.
+  - Tell every agent the exact data path its harness may write, so stray files like `-s` can't appear.
