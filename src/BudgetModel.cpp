@@ -119,6 +119,16 @@ bool BudgetModel::updateBudgetAmount(qsizetype index, qint64 amountCents, QStrin
     return true;
 }
 
+bool BudgetModel::removeBudget(qsizetype index, QString *error) {
+    if (index < 0 || index >= budgets_.size()) {
+        if (error) *error = QStringLiteral("Choose a budget to delete.");
+        return false;
+    }
+    budgets_.remove(index);
+    if (error) error->clear();
+    return true;
+}
+
 std::optional<qint64> BudgetModel::parseBudgetAmount(const QString &amountDollars, QString *error) {
     auto reject = [error](const QString &message) -> std::optional<qint64> {
         if (error) *error = message;
@@ -210,6 +220,17 @@ bool BudgetModel::addExpenseCents(const DecimalCents &amountCents, const QDate &
 
     expenses_.append(Expense{amountCents, date, category.trimmed()});
     spendingCents_ = updatedSpending;
+    if (error) error->clear();
+    return true;
+}
+
+bool BudgetModel::removeExpense(qsizetype index, QString *error) {
+    if (index < 0 || index >= expenses_.size()) {
+        if (error) *error = QStringLiteral("Choose an expense to delete.");
+        return false;
+    }
+    spendingCents_ = spendingCents_ - expenses_.at(index).amountCents;
+    expenses_.remove(index);
     if (error) error->clear();
     return true;
 }

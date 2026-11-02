@@ -39,6 +39,8 @@ public:
     const QVector<Budget> &budgets() const { return budgets_; }
     qint64 totalCents() const;
     bool updateBudgetAmount(qsizetype index, qint64 amountCents, QString *error = nullptr);
+    // Removes one budget; the rest keep their order and every expense stays as it is.
+    bool removeBudget(qsizetype index, QString *error = nullptr);
     // Typed budget text becomes whole cents here so no caller needs a double.
     static std::optional<qint64> parseBudgetAmount(const QString &amountDollars,
                                                    QString *error = nullptr);
@@ -81,6 +83,8 @@ public:
     }
 
     const QVector<Expense> &expenses() const { return expenses_; }  // entry order
+    // Removes one expense and its exact amount from total spending; the rest keep their order.
+    bool removeExpense(qsizetype index, QString *error = nullptr);
     const DecimalCents &totalSpendingCents() const { return spendingCents_; }
     DecimalCents remainingBudgetCents() const;
 
