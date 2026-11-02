@@ -33,6 +33,14 @@ Context from the coordinator: Huy ran the app and found that adding "Meal plan $
 
 The coordinator's defaults for this request are recorded as decisions D15–D22 under `## Part 3`.
 
+### Addendum 2026-11-01: Huy's second follow-up (relayed by the coordinator, Huy's words copied as received)
+
+Context from the coordinator: Huy is running the Part 3 build. His real file upgraded cleanly to schema v2 and holds two duplicate Meal plan budgets ($50 and $250, Nov 1–Dec 1, 2026) and one $100 expense. Delete is how he will clean those up.
+
+> add the ability to delete expense and delete budget
+
+The coordinator's defaults are recorded as decisions D24–D30 under `## Part 4`.
+
 ## Verdict (CTO, Phase 0)
 
 GO WITH CHANGES. The proposal is right: the skeleton's include direction is correct, but the Controller exposes nothing about expenses, the View reaches into Model types (`Budget`, and calls `Budget::amountPerDay()`, a Model method, directly), and money goes through a `double`. Changes from the literal MVP: persistence (MVP requirement 3, last bullet) is left out of this slice and only its seam is designed (D1), and the skeleton's category budgets are kept rather than collapsed to one overall budget (D2), so teammates' tests stay untouched. Branch `huy/mvc-mvp` is cut from `origin/main` (ed49eb0), not from `huy/spec-decimal-cents`: that branch only changes SPECIFICATIONS.md (open PR #7), and the code does not need it. Local `main` is one commit behind `origin/main`, so `origin/main` is the base.
@@ -766,3 +774,68 @@ Fresh build in /tmp/final-p3.
 - **What I'd brief differently:** ask the test-author for the backup's crash cases up front. The data review predicted them at plan time.
 
 **Kept on purpose:** the backup and the `restoreBudget` layering rule. Both come from the data review's safety findings, not from feature creep. `report()` clearing the pending question is deliberate, because every action ends there.
+
+## Part 4: Delete budgets and expenses (2026-11-01)
+
+Verdict: **GO.** Deleting is small, fits the existing layers, and needs no schema change. Size: STANDARD.
+
+### Decisions
+
+- **D24. Model removal.**
+  - New `bool removeBudget(qsizetype index, QString *error = nullptr);`. An out-of-range index gets "Choose a budget to delete.".
+  - New `bool removeExpense(qsizetype index, QString *error = nullptr);`. An out-of-range index gets "Choose an expense to delete.".
+  - On success, the item is removed, the remaining items keep their order, and `error` is cleared. Removing an expense subtracts its exact amount from total spending (DecimalCents, no double). Removing a budget does not touch expenses; they keep their category text. Totals and remaining follow.
+  - On rejection nothing changes.
+  - Why: the Model owns the data and its rules, and knows nothing about confirmation boxes.
+- **D25. Shown row versus Model item (the identity bug).**
+  - The expenses table is shown newest first, so the row the user clicks is not the Model's index. The controller keeps one private helper that gives Model indices in display order (date descending, then later entry first). Both `screen()` and the delete requests use it, so the mapping cannot drift from what is shown.
+  - Budgets are shown in Model order today. They still go through the same kind of helper, so a future sort cannot break deletion.
+  - At request time the controller records the Model index, not the row. Any other action clears the pending request, so the index can't go stale.
+  - Why: deleting the wrong expense would be silent data loss.
+- **D26. Confirmation through the display.**
+  - `BudgetDisplay.h` gains `enum class DeleteChoice { Delete, Cancel };` and `virtual void askDeleteConfirmation(const QString &message) = 0;`.
+  - Controller:
+    - `bool requestDeleteBudget(int shownRow);` and `bool requestDeleteExpense(int shownRow);` check the row against what is shown. A bad row shows the D24 message as an error, records nothing pending, and returns false. Otherwise they store the pending delete and ask, returning true.
+    - `bool resolveDelete(DeleteChoice choice);`:
+      - Nothing pending: false, nothing happens.
+      - Cancel: nothing changes, nothing is saved; shows ("Nothing was deleted.", false) and returns true.
+      - Delete: calls `removeBudget` or `removeExpense`, then saves and pushes the screen through `report()` with "Budget deleted." or "Expense deleted.".
+    - The pending delete and the pending budget conflict are mutually exclusive: starting either clears the other, and `report()` and `loadSaved` clear both.
+  - Messages:
+    - "Delete the <category> budget of <$amount> for <start> to <end>?"
+    - "Delete the <category> expense of <$amount> on <date>?" An uncategorized expense reads "Delete the uncategorized expense of <$amount> on <date>?".
+  - Why: this is the same pattern as D19, where the View only reports the user's answer to the Controller.
+- **D27. The View.**
+  - Add "Delete budget" and "Delete expense" buttons, each disabled until a row in its table is selected.
+  - Both tables use single-row selection. The selection clears when the screen refreshes, and the buttons disable again.
+  - Clicking passes the selected row to `requestDelete…`.
+  - `askDeleteConfirmation` queues a QMessageBox with "Delete" and "Cancel"; Cancel is the default button, and Escape or closing the box counts as Cancel. It then calls `resolveDelete`.
+  - No undo and no multi-select.
+- **D28. Persistence.** No schema change. A delete saves through the existing full rewrite, which renumbers `position` from the Model's order, so positions stay consistent after a middle row goes. Tests:
+  - A delete survives a reload.
+  - Deleting a middle row keeps the remaining order after a reload.
+  - Deleting one of two identical Meal plan budgets leaves exactly one, also after a reload.
+- **D29. Constraints.** The same as Part 3:
+  - Build only out of source (`/tmp/mvc-build`). Never rebuild `build/`, where Huy's app runs as pid 30206, and never touch `~/Library/Application Support`. Tests use temporary files only.
+  - Teammate tests from `ed49eb0` are never modified. The layering check stays green. No new dependency.
+- **D30. Wording.** The strings above are defaults (Open Question 6).
+
+### Tasks
+
+| # | Task | Role | Model | Files it may touch | Done when | Status |
+|---|------|------|-------|--------------------|-----------|--------|
+| 15 | Failing tests for delete (cases listed below the table) | team-test-author | sonnet | tests/ (new files + branch-added files only) | new tests fail only for the missing API | pending |
+| 16 | Model + Display + Controller | team-implementer | opus | src/BudgetModel.*, src/BudgetDisplay.h, src/BudgetController.* | test_build 0 warnings, doctest 0 failed, ctest 100% | pending |
+| 17 | View buttons, enable/disable and the confirmation box; README/REQUIREMENTS lines; offscreen harness on a temporary file with screenshots | team-implementer | sonnet | src/BudgetView.*, README.md, REQUIREMENTS.md | app builds; ctest 100%; harness PASS; screenshots | pending |
+
+Task 15 covers:
+- Model removal: a valid delete, an invalid index, a middle row, exact spending after removal, and a budget delete that keeps expenses.
+- Controller with the fake display: a request asks; Delete deletes; Cancel doesn't; a bad row is an error; newest-first order maps to the right expense; the delete prompt and the conflict prompt exclude each other.
+- Persistence: a round trip, a middle row, and the duplicate Meal plan case.
+- The fake display gains `askDeleteConfirmation`.
+
+Open Question 6 (wording, default taken):
+- "Choose a budget to delete." and "Choose an expense to delete."
+- "Delete the … budget of … for … to …?" and "Delete the … expense of … on …?"
+- "Budget deleted.", "Expense deleted." and "Nothing was deleted."
+- The buttons "Delete budget", "Delete expense", "Delete" and "Cancel".
