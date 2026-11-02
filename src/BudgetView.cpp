@@ -178,10 +178,6 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
     totalSpending_->setText(QStringLiteral("Total spending: %1").arg(screen.totalSpending));
     remaining_->setText(QStringLiteral("Remaining budget: %1").arg(screen.remaining));
 
-    // Rows may have moved or gone, so a delete must not act on a stale highlight.
-    budgetsTable_->clearSelection();
-    expensesTable_->clearSelection();
-
     budgetsTable_->setRowCount(screen.budgets.size());
     for (int row = 0; row < screen.budgets.size(); ++row) {
         const BudgetRow &budget = screen.budgets.at(row);
@@ -192,6 +188,12 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
         const ExpenseRow &expense = screen.expenses.at(row);
         fillRow(expensesTable_, row, {expense.date, expense.category, expense.amount});
     }
+
+    // Rows may have moved or gone, so a delete must not act on a stale highlight. This runs after
+    // the refill because shrinking a table makes Qt re-select a row near the current one; clear()
+    // drops that current index too, and the selection signals disable the delete buttons.
+    budgetsTable_->selectionModel()->clear();
+    expensesTable_->selectionModel()->clear();
 }
 
 void BudgetView::showMessage(const QString &text, bool isError) {
