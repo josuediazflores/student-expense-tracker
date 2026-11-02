@@ -10,9 +10,15 @@ A native Qt Widgets and C++ walking skeleton for CSCI 187, built on the [course 
 - Reject negative amounts and end dates before start dates in the model.
 - Record expenses with an amount and a date (today by default) in the GUI.
 - View total spending, remaining budget (negative when overspent), and a newest-first list of expenses.
-- Delete a budget or an expense: select its row and click Delete budget or Delete expense. The app asks you to confirm first, and a delete cannot be undone.
+- Delete a budget or an expense: select its row and click **Delete budget** or **Delete expense**. The app asks you to confirm first. **Deletes can't be undone.**
 
-The daily amount includes both the start and end dates. Budgets and expenses are saved after every successful change and loaded again when the app starts, so they remain available after the app is closed and reopened. If the saved file cannot be loaded, the app says so and does not overwrite it. The GUI provides budget entry and update, expense entry, the totals, and the expense list. Amounts are typed as dollar text, and the model validates them. Adding a budget for a category that already has one in an overlapping time frame does not create a second budget. The app tells you about the existing budget and lets you update it, choose another category, or cancel. Each expense can be given one of the budget categories, and the expense list shows it in a Category column; expenses saved before categories existed show as Uncategorized. The first time a version 1 data file is opened and upgraded, the app first copies it to `budget.sqlite.v1-backup.sqlite` in the same folder, and it never replaces an existing backup. Meal-plan balance imports and charts are later increments.
+The daily amount includes both the start and end dates. Meal-plan balance imports and charts are later increments.
+
+- **Saving.** The app saves budgets and expenses after every successful change and loads them when it starts, so they remain available after the app is closed and reopened. If the saved file can't be loaded, the app says so and doesn't overwrite it.
+- **Entering amounts.** The GUI provides budget entry and update, expense entry, the totals, and the expense list. You type amounts as dollar text, and the model validates them.
+- **Duplicate budgets.** Adding a budget for a category that already has one in an overlapping time frame doesn't create a second budget. The app tells you about the existing budget and lets you update it, choose another category, or cancel.
+- **Expense categories.** You can give each expense one of the budget categories, and the expense list shows it in a Category column. Expenses saved before categories existed show as Uncategorized.
+- **Upgrade backup.** The first time the app opens and upgrades a version 1 data file, it first copies the file to `budget.sqlite.v1-backup.sqlite` in the same folder. It never replaces an existing backup.
 
 ## Build and run
 
@@ -61,4 +67,10 @@ Tests use the vendored doctest header. Each new test file should include `doctes
 - `src/main.cpp`: creates the store, model, controller, and view and connects them. The data is saved in `budget.sqlite` in the per-user app data folder, which on macOS is `~/Library/Application Support/SCU Student Budget/`.
 - `tests/CheckLayering.cmake`: the layering check that `ctest` runs as the `layering` test.
 
-The layers follow strict MVC. The model knows nothing about the controller, the view, or storage; the store sits beside the model and the controller calls it. The view calls only the controller and cannot include the model's headers, so it never sees model types. The controller mediates between them and updates the view through `BudgetDisplay`. CMake builds the model and controller as libraries that do not link Qt Widgets, and `CheckLayering.cmake` fails the `layering` test if a source file includes a header it should not, such as a Widgets header in the model or `BudgetModel.h` in the view.
+The layers follow strict MVC:
+
+- The model knows nothing about the controller, the view, or storage; the store sits beside the model and the controller calls it.
+- The view calls only the controller and cannot include the model's headers, so it never sees model types.
+- The controller mediates between them and updates the view through `BudgetDisplay`.
+
+CMake builds the model and controller as libraries that do not link Qt Widgets, and `CheckLayering.cmake` fails the `layering` test if a source file includes a header it should not, such as a Widgets header in the model or `BudgetModel.h` in the view.

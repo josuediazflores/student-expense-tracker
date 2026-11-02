@@ -43,13 +43,19 @@ The coordinator's defaults are recorded as decisions D24–D30 under `## Part 4`
 
 ## Verdict (CTO, Phase 0)
 
-GO WITH CHANGES. The proposal is right: the skeleton's include direction is correct, but the Controller exposes nothing about expenses, the View reaches into Model types (`Budget`, and calls `Budget::amountPerDay()`, a Model method, directly), and money goes through a `double`. Changes from the literal MVP: persistence (MVP requirement 3, last bullet) is left out of this slice and only its seam is designed (D1), and the skeleton's category budgets are kept rather than collapsed to one overall budget (D2), so teammates' tests stay untouched. Branch `huy/mvc-mvp` is cut from `origin/main` (ed49eb0), not from `huy/spec-decimal-cents`: that branch only changes SPECIFICATIONS.md (open PR #7), and the code does not need it. Local `main` is one commit behind `origin/main`, so `origin/main` is the base.
+GO WITH CHANGES. The proposal is right: the skeleton's include direction is correct, but the Controller exposes nothing about expenses, the View reaches into Model types (`Budget`, and calls `Budget::amountPerDay()`, a Model method, directly), and money goes through a `double`.
+
+Changes from the literal MVP: persistence (MVP requirement 3, last bullet) is left out of this slice and only its seam is designed (D1), and the skeleton's category budgets are kept rather than collapsed to one overall budget (D2), so teammates' tests stay untouched.
+
+Branch `huy/mvc-mvp` is cut from `origin/main` (ed49eb0), not from `huy/spec-decimal-cents`: that branch only changes SPECIFICATIONS.md (open PR #7), and the code does not need it. Local `main` is one commit behind `origin/main`, so `origin/main` is the base.
 
 > **Superseded in part (2026-11-01, after trial round 1):** persistence is no longer cut. D13 reverses D1, and persistence is built in this branch (see `## Part 2: Persistence slice`). The category-budget change (D2) still stands and is now Open Question 3.
 
 ## Goal
 
-A student can open the app, add or update a budget amount typed as dollar text, log an expense with an amount and a date (today by default), and immediately see total budget, total spending, remaining budget (negative shown as `-$…`), and a newest-first list of expenses. The code follows strict MVC. The Model knows nothing about the controller, view or display interface. The View talks only to the Controller and cannot name Model types. The Controller mediates and pushes view-ready strings through an abstract `BudgetDisplay`. These rules are enforced by CMake target boundaries and by a ctest layering check that runs in CI.
+A student can open the app, add or update a budget amount typed as dollar text, log an expense with an amount and a date (today by default), and immediately see total budget, total spending, remaining budget (negative shown as `-$…`), and a newest-first list of expenses.
+
+The code follows strict MVC. The Model knows nothing about the controller, view or display interface. The View talks only to the Controller and cannot name Model types. The Controller mediates and pushes view-ready strings through an abstract `BudgetDisplay`. These rules are enforced by CMake target boundaries and by a ctest layering check that runs in CI.
 
 ## MVP scope
 
@@ -238,13 +244,13 @@ A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `b
 
 ## Dependency enforcement
 
-1. **Targets** (CMakeLists.txt). The `src/*.cpp` glob is replaced:
+- **Targets** (CMakeLists.txt). The `src/*.cpp` glob is replaced:
    - `add_library(budget_model STATIC src/BudgetModel.cpp src/DecimalCents.cpp)`: PUBLIC include dir `src`, PUBLIC link `Qt6::Core` only.
    - `add_library(budget_controller STATIC src/BudgetController.cpp)`: PUBLIC link `budget_model Qt6::Core`.
    - `add_executable(app src/main.cpp src/BudgetView.cpp)`: PRIVATE link `budget_controller Qt6::Widgets Qt6::Sql`.
    - Under `BUILD_TESTING`: keep `file(GLOB TEST_SOURCES CONFIGURE_DEPENDS tests/*.cpp)` and `add_executable(test_build ${TEST_SOURCES})`, PRIVATE link `budget_controller Qt6::Core`, include `tests`, `add_test(NAME test_build ...)`. Add `add_test(NAME layering COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_SOURCE_DIR}/tests/CheckLayering.cmake)`.
    - The result: if the Model or Controller uses a Widgets symbol, `test_build` fails to link.
-2. **`tests/CheckLayering.cmake`** (no new dependency):
+- **`tests/CheckLayering.cmake`** (no new dependency):
    - Requires `SOURCE_DIR` (FATAL_ERROR if unset).
    - For each rule file it reads include lines with `file(STRINGS … REGEX "^[ \t]*#[ \t]*include")` and extracts the name between `<>`/`""`. No line numbers, because this avoids CMake list-splitting on `;`/`[`.
    - It collects all violations, prints each as `LAYERING VIOLATION: <relpath> includes <name> -- <reason>`, then `message(FATAL_ERROR "Layering check failed (<n> violations).")`.
@@ -261,7 +267,7 @@ A later slice adds `src/BudgetStore.h/.cpp` as its own static library linking `b
    | `src/BudgetController.h` (extra) | `(^|/)(BudgetModel|DecimalCents)\.h$` |
    | `src/BudgetView.h`, `.cpp` | `(^|/)(BudgetModel|DecimalCents)\.h$` |
    | `src/BudgetDisplay.h` | any `"…"` include, or any name that exists as a file in `src/` |
-3. **Controller tests.** `tests/test_budget_controller.cpp` uses a fake `BudgetDisplay` that appends every `BudgetScreen` and `(text, isError)` pair to vectors. It does not include Widgets.
+- **Controller tests.** `tests/test_budget_controller.cpp` uses a fake `BudgetDisplay` that appends every `BudgetScreen` and `(text, isError)` pair to vectors. It does not include Widgets.
 
 ## Files
 
@@ -297,7 +303,14 @@ Untouched: `src/DecimalCents.*`, all existing `tests/*`, `.github/workflows/ci.y
 
 ## Tasks
 
-T1, T2, T3 and T4 run in parallel (disjoint files). T5 needs T1 + T4. T6 needs T2 + T3 + T5. T7 needs T6. T8 may run in parallel with T5 to T7, but its text must match T7's result. T9 runs last.
+Task order:
+
+- T1, T2, T3 and T4 run in parallel (disjoint files).
+- T5 needs T1 + T4.
+- T6 needs T2 + T3 + T5.
+- T7 needs T6.
+- T8 may run in parallel with T5 to T7, but its text must match T7's result.
+- T9 runs last.
 
 | # | Task | Role | Files it may touch | Done when |
 | --- | --- | --- | --- | --- |
@@ -485,7 +498,11 @@ Branch: `huy/mvc-mvp` (local only; no upstream set). Base commit: `ed49eb0` (ori
 
 ## Trial (round 1)
 
-2026-11-01, base `ed49eb0`, HEAD `793ef10`. **Verdict: REJECT.** The judge ruled 15 requirements MET. It ruled one FAILED: MVP Req 3's last bullet, "The user's saved budget and spending entries remain available after closing and reopening the application". The request says to take MVP scope from the docs and implement it, and D1 cut this requirement without Huy's sign-off. Nothing was faked: the integrity scan found 0 flags; 12 of 12 falsifier mutations and 8 of 8 advocate mutations were caught; 14 of 14 falsifier layering probes and 6 of 6 judge layering probes were caught; and a real-widget offscreen harness passed 19 of 19 checks. Claims audit: claims 1–13 BACKED. Claim 14 (security) was partly backed: the judge re-ran gitleaks, but not semgrep or the LLM review.
+2026-11-01, base `ed49eb0`, HEAD `793ef10`. **Verdict: REJECT.** The judge ruled 15 requirements MET. It ruled one FAILED: MVP Req 3's last bullet, "The user's saved budget and spending entries remain available after closing and reopening the application". The request says to take MVP scope from the docs and implement it, and D1 cut this requirement without Huy's sign-off.
+
+Nothing was faked: the integrity scan found 0 flags; 12 of 12 falsifier mutations and 8 of 8 advocate mutations were caught; 14 of 14 falsifier layering probes and 6 of 6 judge layering probes were caught; and a real-widget offscreen harness passed 19 of 19 checks.
+
+Claims audit: claims 1–13 BACKED. Claim 14 (security) was partly backed: the judge re-ran gitleaks, but not semgrep or the LLM review.
 
 ## Part 2: Persistence slice (added after trial round 1)
 
