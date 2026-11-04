@@ -26,7 +26,7 @@ add_library(budget_controller STATIC src/BudgetController.cpp)
 target_link_libraries(budget_controller PUBLIC budget_model budget_store Qt6::Core)
 
 # The GUI application.
-add_executable(app src/main.cpp src/BudgetView.cpp)
+add_executable(app src/main.cpp src/BudgetView.cpp src/ui.qrc)
 target_link_libraries(app PRIVATE budget_controller Qt6::Widgets)
 
 include(CTest)
