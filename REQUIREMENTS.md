@@ -90,12 +90,15 @@ The walking skeleton proves the full path from the Qt user interface through the
 | Requirement | Status |
 | --- | --- |
 | Enter a budget amount | Done in the GUI. The skeleton also stores a category and date range for each budget. |
-| Update the budget amount | Not started |
-| Reject invalid budget input with a message | Done: negative amounts, missing dates, end date before start date, and blank categories |
-| Record an expense amount | Done in the model; the GUI has no expense form yet |
-| Choose an expense date | Not started |
+| Update the budget amount | Done in the GUI: select a budget and enter a new amount. |
+| Reject invalid budget input with a message | Done: negative amounts, missing dates, end date before start date, blank categories, and budget amount text that is empty, not a plain decimal, a fraction of a cent, or too large |
+| Record an expense amount | Done in the GUI |
+| Choose an expense date | Done. The date defaults to today and can be changed. |
 | Show total budget | Done |
-| Show total spending and remaining budget | Done in the model; not shown in the GUI yet |
-| Show a list of expenses | Not started |
-| Keep data after the app closes | Not started. Data is held in memory for the current session. |
+| Show total spending and remaining budget | Done. A negative remaining amount shows a minus sign. |
+| Show a list of expenses | Done. Expenses show newest first with date, amount and category. |
+| Keep data after the app closes | Done. Budgets and expenses are saved to a SQLite file named `budget.sqlite` after every successful change and loaded when the app starts. The file is in the per-user app data folder, for example `~/Library/Application Support/SCU Student Budget/` on macOS. |
 | Show a daily amount for each budget | Done (from the later daily-limit requirement) |
+| Pick a category for each expense | Done in the GUI. The expense list shows the category. |
+| Prevent a second budget for the same category and dates | Done. Adding a budget that clashes with an existing one asks whether to update the existing budget, choose another category, or cancel. |
+| Delete a budget or an expense | Done in the GUI: select a row and click Delete budget or Delete expense, then confirm. There is no undo. |

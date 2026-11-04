@@ -24,8 +24,12 @@ public:
     // exponents are limited to +/-10000 to bound exponent-driven allocation;
     // ordinary decimal input has no fixed fractional-precision limit.
     static std::optional<DecimalCents> fromDecimal(const QString &text);
+    // Dollar text to exact cents by shifting the decimal point: "12.345" -> 1234.5.
+    static std::optional<DecimalCents> fromDollars(const QString &dollars);
 
     QString toString() const;
+    // Exact dollar text, the inverse of fromDollars: 1234.5 cents -> "12.345".
+    QString toDollarsString() const;
     bool isNegative() const { return negative_; }
 
     DecimalCents operator+(const DecimalCents &other) const;

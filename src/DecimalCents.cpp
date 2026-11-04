@@ -141,6 +141,15 @@ void DecimalCents::normalize() {
     }
 }
 
+std::optional<DecimalCents> DecimalCents::fromDollars(const QString &dollars) {
+    return fromDecimal(dollars + QStringLiteral("e2"));
+}
+
+QString DecimalCents::toDollarsString() const {
+    // A DecimalCents string is always valid decimal text, so value() cannot throw.
+    return fromDecimal(toString() + QStringLiteral("e-2")).value().toString();
+}
+
 QString DecimalCents::toString() const {
     QString result;
     if (scale_ == 0) {
