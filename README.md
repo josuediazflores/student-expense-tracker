@@ -20,6 +20,13 @@ The daily amount includes both the start and end dates. Meal-plan balance import
 - **Expense categories.** You can give each expense one of the budget categories, and the expense list shows it in a Category column. Expenses saved before categories existed show as Uncategorized.
 - **Upgrade backup.** The first time the app opens and upgrades a version 1 data file, it first copies the file to `budget.sqlite.v1-backup.sqlite` in the same folder. If that name already exists, it uses a timestamped name instead. It never replaces an existing backup.
 
+## Design diagrams
+
+- **ER diagram:** [PDF](docs/diagrams/er-diagram.pdf), [editable draw.io file](docs/diagrams/er-diagram.drawio), [online diagram](https://app.diagrams.net/#G16hVoa2NStDSypyUISvJm33lLjafhzmRw).
+- **CRC diagram:** [PDF](docs/diagrams/crc-diagram.pdf), [editable draw.io file](docs/diagrams/crc-diagram.drawio), [online diagram](https://app.diagrams.net/#G16C2NSdxEqhffuGSfOl3LX41-kJ2pcPgd).
+
+The ER diagram preserves the team's supplied design. The CRC incorporates professor feedback: Budget knows the budget and transaction data and calculates the remaining budget; Transaction knows its own amount, date, and category. The CRC's code mapping identifies the corresponding implementation types.
+
 ## Build and run
 
 Install CMake 3.16 or later, a C++17 compiler, and Qt 6 with the Widgets and SQL modules. The template's CMake file requires Qt 6. On macOS with Homebrew, `brew install cmake qt` installs the build tools.
