@@ -222,8 +222,24 @@ BudgetStore::~BudgetStore() {
 
 bool BudgetStore::load(BudgetModel &model, QString *error) {
     loaded_ = false;
-    if (!lock_.isLocked() && !lock_.tryLock(0))
-        return fail(error, QStringLiteral("The budget is already open in another window."));
+    if (!lock_.isLocked() && !lock_.tryLock(0)) {
+        switch (lock_.error()) {
+        case QLockFile::LockFailedError: {
+            qint64 pid = 0;
+            QString hostname;
+            QString appname;
+            if (lock_.getLockInfo(&pid, &hostname, &appname))
+                return fail(error, QStringLiteral("The budget is already open in another window."));
+            return fail(error, QStringLiteral("The budget lock file could not be created or accessed."));
+        }
+        case QLockFile::PermissionError:
+            return fail(error, QStringLiteral("The budget lock file could not be created or accessed."));
+        case QLockFile::UnknownError:
+        case QLockFile::NoError:
+            return fail(error, QStringLiteral("The budget lock could not be acquired."));
+        }
+        return fail(error, QStringLiteral("The budget lock could not be acquired."));
+    }
     QSqlDatabase db = QSqlDatabase::database(connectionName_, false);
     if (!ensureOpen(db, error)) return false;
     const std::optional<int> version = schemaVersion(db, error);

@@ -275,7 +275,7 @@ TEST_CASE("after loading a missing file, saving works") {
     checkFilled(loaded);
 }
 
-TEST_CASE("a file that cannot be opened fails the load with the driver's text") {
+TEST_CASE("a missing data folder reports a lock-file error, not another app's lock") {
     TempDir tmp;
     BudgetStore store(tmp.path("no/such/folder/budget.sqlite"));
     BudgetModel model;
@@ -284,6 +284,8 @@ TEST_CASE("a file that cannot be opened fails the load with the driver's text") 
     CHECK_FALSE(store.load(model, &error));
 
     CHECK_FALSE(error.isEmpty());
+    CHECK(error != kLocked);
+    CHECK_FALSE(error.contains(QStringLiteral("already open")));
 }
 
 // ---- A failed load changes nothing ---------------------------------------------------
