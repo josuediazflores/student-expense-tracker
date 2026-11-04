@@ -18,7 +18,7 @@ The daily amount includes both the start and end dates. Meal-plan balance import
 - **Entering amounts.** The GUI provides budget entry and update, expense entry, the totals, and the expense list. You type amounts as dollar text, and the model validates them.
 - **Duplicate budgets.** Adding a budget for a category that already has one in an overlapping time frame doesn't create a second budget. The app tells you about the existing budget and lets you update it, choose another category, or cancel.
 - **Expense categories.** You can give each expense one of the budget categories, and the expense list shows it in a Category column. Expenses saved before categories existed show as Uncategorized.
-- **Upgrade backup.** The first time the app opens and upgrades a version 1 data file, it first copies the file to `budget.sqlite.v1-backup.sqlite` in the same folder. It never replaces an existing backup.
+- **Upgrade backup.** The first time the app opens and upgrades a version 1 data file, it first copies the file to `budget.sqlite.v1-backup.sqlite` in the same folder. If that name already exists, it uses a timestamped name instead. It never replaces an existing backup.
 
 ## Build and run
 

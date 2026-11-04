@@ -6,7 +6,7 @@ This document describes how SCU Student Budget meets the requirements in [REQUIR
 
 - Language: C++17
 - User interface: Qt 6 Widgets
-- Storage: Qt SQL with SQLite (**Planned**; the skeleton keeps data in memory)
+- Storage: Qt SQL with SQLite
 - Build: CMake 3.16 or later
 - Tests: doctest, run with CTest
 - Continuous integration: GitHub Actions builds the app and runs every test on each push and pull request
@@ -19,11 +19,13 @@ The app follows the model-view-controller pattern.
 | --- | --- | --- |
 | Model | `src/BudgetModel.*` | Stores budgets and expenses, enforces validation rules, and calculates totals. It does not depend on Qt Widgets, the view, or the controller, so it can be unit tested on its own. |
 | Exact money | `src/DecimalCents.*` | An exact decimal number of cents used for spending and remaining balances. It adds, subtracts, and compares decimal digits directly, so fractional cents are never rounded or lost to floating-point error. |
-| Controller | `src/BudgetController.*` | Receives requests from the view, converts them into model calls, and returns results and error messages. |
-| View | `src/BudgetView.*` | Qt Widgets form and table. It shows data and passes user input to the controller. It holds no business rules. |
-| Entry point | `src/main.cpp` | Creates the model, controller, and view, then starts the Qt event loop. |
+| Controller | `src/BudgetController.*` | Receives raw input from the view, coordinates model actions and persistence, and pushes view-ready screens and messages through `BudgetDisplay`. |
+| Display interface | `src/BudgetDisplay.h` | Holds view-ready screen data and the interface used by the controller to update the view. |
+| View | `src/BudgetView.*` | Qt Widgets forms and tables. It shows data and passes user input to the controller. It holds no business rules or Model types. |
+| Store | `src/BudgetStore.*` | Loads and saves validated model data in SQLite. It is separate from the Model, which has no storage dependency. |
+| Entry point | `src/main.cpp` | Creates and connects the store, model, controller, and view, then starts the Qt event loop. |
 
-The test executable links only `BudgetModel.cpp`, `DecimalCents.cpp`, and Qt Core, which keeps unit tests fast and independent of the GUI.
+The test executable links the Model, Controller, Store, Qt Core, and Qt SQL, but not Qt Widgets. Model and Controller behavior can be tested without creating the GUI.
 
 ## Data model
 
@@ -46,7 +48,7 @@ Neither type uses floating-point numbers, so totals never pick up rounding error
 
 ### Expense
 
-The skeleton records each expense as an exact amount added to a running `DecimalCents` spending total. **Planned:** store each expense as a record with an amount and a date so the app can list entries.
+Each expense is stored as a record with an exact amount, date, and optional category. The model keeps the running spending total as `DecimalCents`, so deleting an expense can update totals without losing fractional cents. Expenses without a category are shown as Uncategorized.
 
 ## Business rules
 
@@ -89,21 +91,18 @@ On success, `error` is cleared.
 
 The main window, titled "SCU Student Budget," contains:
 
-- A form with a category drop-down (Meal plan, Groceries, Dining out, Transport, School supplies, Other), an amount field in dollars, and start and end date pickers. The start date defaults to today and the end date to one month later.
-- An **Add budget** button. When the model rejects input, its message appears below the button. On success the status reads "Budget added."
-- A total budget label.
-- A table with the columns Category, Total, Period, and Per day.
-
-### Planned MVP screen
-
-- An editable overall budget amount that recalculates the remaining budget when changed.
-- An expense form with an amount field, a date picker that defaults to today, and a **Save expense** button that shows validation messages.
+- A budget form with a category drop-down (Meal plan, Groceries, Dining out, Transport, School supplies, Other), a dollar amount field, and start and end date pickers. The start date defaults to today and the end date to one month later. Budgets can be added, updated, or deleted after confirmation.
+- An expense form with a category drop-down, dollar amount field, and date picker defaulting to today. Expenses can be saved and deleted after confirmation.
 - Labels for total budget, total spending, and remaining budget. A negative remaining budget is shown with a minus sign.
-- A table of logged expenses with Date and Amount columns, newest first.
+- A budget table with Category, Total, Period, and Per day columns.
+- A newest-first expense table with Date, Category, and Amount columns.
+- Feedback messages for rejected actions, successful changes, and persistence failures. Duplicate overlapping budgets for the same category prompt the user to update the existing budget, choose another category, or cancel.
 
-## Persistence (Planned)
+## Persistence
 
-The app will save budgets and expenses to a local SQLite database through Qt SQL, load them at startup, and write each change immediately so nothing is lost when the window closes.
+The app stores budgets and expenses in `budget.sqlite` in the per-user application data folder. It loads the data at startup and saves successful changes transactionally. A lock file prevents two app instances from writing the same database at once. If loading fails, the store refuses to overwrite the saved file.
+
+The database schema is versioned. When upgrading a version 1 database, the app creates a backup before adding the expense category column. The backup uses `budget.sqlite.v1-backup.sqlite` when available; if that name already exists, a timestamped name is used instead. An existing backup is never overwritten.
 
 ## Testing
 
