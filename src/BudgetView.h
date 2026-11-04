@@ -2,6 +2,7 @@
 
 #include "BudgetController.h"
 
+#include <QPalette>
 #include <QWidget>
 
 class QComboBox;
@@ -22,7 +23,11 @@ public:
     void askBudgetConflict(const QString &message) override;
     void askDeleteConfirmation(const QString &message) override;
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private:
+    void applyAppearance();
     void saveBudget();
     void updateSelectedBudget();
     void saveExpense();
@@ -43,4 +48,7 @@ private:
     QLabel *feedback_;
     QTableWidget *budgetsTable_;
     QTableWidget *expensesTable_;
+    QWidget *budgetsEmpty_;
+    QWidget *expensesEmpty_;
+    QPalette appearancePalette_;
 };
