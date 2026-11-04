@@ -224,8 +224,14 @@ bool BudgetStore::load(BudgetModel &model, QString *error) {
     loaded_ = false;
     if (!lock_.isLocked() && !lock_.tryLock(0)) {
         switch (lock_.error()) {
-        case QLockFile::LockFailedError:
-            return fail(error, QStringLiteral("The budget is already open in another window."));
+        case QLockFile::LockFailedError: {
+            qint64 pid = 0;
+            QString hostname;
+            QString appname;
+            if (lock_.getLockInfo(&pid, &hostname, &appname))
+                return fail(error, QStringLiteral("The budget is already open in another window."));
+            return fail(error, QStringLiteral("The budget lock file could not be created or accessed."));
+        }
         case QLockFile::PermissionError:
             return fail(error, QStringLiteral("The budget lock file could not be created or accessed."));
         case QLockFile::UnknownError:
