@@ -25,7 +25,7 @@ The daily amount includes both the start and end dates. Meal-plan balance import
 - **ER diagram:** [PDF](docs/diagrams/er-diagram.pdf), [editable draw.io file](docs/diagrams/er-diagram.drawio), [online diagram](https://app.diagrams.net/#G16hVoa2NStDSypyUISvJm33lLjafhzmRw).
 - **CRC diagram:** [PDF](docs/diagrams/crc-diagram.pdf), [editable draw.io file](docs/diagrams/crc-diagram.drawio), [online diagram](https://app.diagrams.net/#G16C2NSdxEqhffuGSfOl3LX41-kJ2pcPgd).
 
-The ER diagram preserves the team's supplied design. The CRC incorporates professor feedback: Budget knows the budget and transaction data and calculates the remaining budget; Transaction knows its own amount, date, and category. The CRC's code mapping identifies the corresponding implementation types.
+The ER diagram shows Income allocated to Budget, plus Expense. The CRC diagram covers BudgetModel, Budget, and Expense responsibilities.
 
 ## Build and run
 
