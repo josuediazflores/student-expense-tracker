@@ -27,6 +27,9 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    QWidget *makeHomePage();
+    QWidget *makeBudgetsPage();
+    QWidget *makeExpensesPage();
     void applyAppearance();
     void saveBudget();
     void updateSelectedBudget();
