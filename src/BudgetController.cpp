@@ -32,6 +32,15 @@ QString formatMoney(const DecimalCents &cents) {
 QString formatDate(const QDate &date) {
     return date.toString(QStringLiteral("MMM d, yyyy"));
 }
+
+QString formatPeriod(const Budget &budget) {
+    return formatDate(budget.startDate) + QStringLiteral(" to ") + formatDate(budget.endDate);
+}
+
+ExpenseRow formatExpense(const Expense &expense) {
+    return {formatDate(expense.date), formatMoney(expense.amountCents),
+            expense.category.isEmpty() ? QStringLiteral("Uncategorized") : expense.category};
+}
 }
 
 BudgetController::BudgetController(BudgetModel &model) : model_(model) {}
@@ -69,18 +78,32 @@ BudgetScreen BudgetController::screen() const {
     for (qsizetype index : shownBudgetOrder()) {
         const Budget &budget = model_.budgets().at(index);
         result.budgets.append({budget.category, formatMoney(DecimalCents(budget.amountCents)),
-                               formatDate(budget.startDate) + QStringLiteral(" to ") +
-                                   formatDate(budget.endDate),
+                               formatPeriod(budget),
                                usEnglish.toCurrencyString(budget.amountPerDay())});
     }
 
+    for (qsizetype index : shownExpenseOrder())
+        result.expenses.append(formatExpense(model_.expenses().at(index)));
+    return result;
+}
+
+std::optional<BudgetDetails> BudgetController::budgetDetails(int shownRow) const {
+    const auto order = shownBudgetOrder();
+    if (shownRow < 0 || shownRow >= order.size()) return std::nullopt;
+
+    const Budget &budget = model_.budgets().at(order.at(shownRow));
+    BudgetDetails details{budget.category, formatPeriod(budget), QString(), {}};
+    DecimalCents totalSpent;
     for (qsizetype index : shownExpenseOrder()) {
         const Expense &expense = model_.expenses().at(index);
-        result.expenses.append({formatDate(expense.date), formatMoney(expense.amountCents),
-                                expense.category.isEmpty() ? QStringLiteral("Uncategorized")
-                                                           : expense.category});
+        if (expense.date < budget.startDate || expense.date > budget.endDate ||
+            expense.category.compare(budget.category, Qt::CaseInsensitive) != 0)
+            continue;
+        details.expenses.append(formatExpense(expense));
+        totalSpent = totalSpent + expense.amountCents;
     }
-    return result;
+    details.totalSpent = formatMoney(totalSpent);
+    return details;
 }
 
 QVector<qsizetype> BudgetController::shownBudgetOrder() const {

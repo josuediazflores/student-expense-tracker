@@ -5,10 +5,14 @@
 #include <QPalette>
 #include <QWidget>
 
+#include <array>
+
 class QComboBox;
 class QDateEdit;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QTableWidget;
 
 // Draws the screens the controller pushes and forwards raw input to it. It holds no
@@ -27,6 +31,19 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    struct RecentExpenseRow {
+        QWidget *container;
+        QLabel *category;
+        QLabel *date;
+        QLabel *amount;
+    };
+
+    QWidget *makeHomePage();
+    QWidget *makeBudgetsPage();
+    QWidget *makeExpensesPage();
+    QWidget *makeBudgetDetailsPanel();
+    void toggleBudgetDetails(int row);
+    void hideBudgetDetails();
     void applyAppearance();
     void saveBudget();
     void updateSelectedBudget();
@@ -45,10 +62,19 @@ private:
     QLabel *totalBudget_;
     QLabel *totalSpending_;
     QLabel *remaining_;
+    std::array<RecentExpenseRow, 5> recentExpenses_;
+    QLabel *recentExpensesEmpty_;
+    QPushButton *recentExpensesAction_;
     QLabel *feedback_;
     QTableWidget *budgetsTable_;
     QTableWidget *expensesTable_;
     QWidget *budgetsEmpty_;
     QWidget *expensesEmpty_;
+    QGroupBox *budgetDetailsPanel_;
+    QLabel *budgetDetailsPeriod_;
+    QLabel *budgetDetailsTotal_;
+    QTableWidget *budgetDetailsTable_;
+    QWidget *budgetDetailsEmpty_;
+    int expandedBudgetRow_ = -1;
     QPalette appearancePalette_;
 };

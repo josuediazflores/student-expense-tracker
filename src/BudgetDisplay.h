@@ -17,6 +17,13 @@ struct ExpenseRow {
     QString category;  // "Uncategorized" when none was recorded
 };
 
+struct BudgetDetails {
+    QString category;
+    QString period;
+    QString totalSpent;
+    QVector<ExpenseRow> expenses;  // newest first
+};
+
 struct BudgetScreen {
     QString totalBudget;
     QString totalSpending;

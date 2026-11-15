@@ -22,6 +22,8 @@ public:
     // Replaces the model with the saved data and shows it, or shows why it could not.
     bool loadSaved();
     BudgetScreen screen() const;
+    // Expenses matching the displayed budget's category and inclusive dates.
+    std::optional<BudgetDetails> budgetDetails(int shownRow) const;
 
     // A budget that clashes with an existing one is not added: the display is asked what
     // to do, the request is kept, and this returns false.
