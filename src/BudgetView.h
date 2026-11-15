@@ -5,11 +5,14 @@
 #include <QPalette>
 #include <QWidget>
 
+#include <array>
+
 class QComboBox;
 class QDateEdit;
 class QGroupBox;
 class QLabel;
 class QLineEdit;
+class QPushButton;
 class QTableWidget;
 
 // Draws the screens the controller pushes and forwards raw input to it. It holds no
@@ -28,6 +31,13 @@ protected:
     void changeEvent(QEvent *event) override;
 
 private:
+    struct RecentExpenseRow {
+        QWidget *container;
+        QLabel *category;
+        QLabel *date;
+        QLabel *amount;
+    };
+
     QWidget *makeHomePage();
     QWidget *makeBudgetsPage();
     QWidget *makeExpensesPage();
@@ -52,6 +62,9 @@ private:
     QLabel *totalBudget_;
     QLabel *totalSpending_;
     QLabel *remaining_;
+    std::array<RecentExpenseRow, 5> recentExpenses_;
+    QLabel *recentExpensesEmpty_;
+    QPushButton *recentExpensesAction_;
     QLabel *feedback_;
     QTableWidget *budgetsTable_;
     QTableWidget *expensesTable_;
