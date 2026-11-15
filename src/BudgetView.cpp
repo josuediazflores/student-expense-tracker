@@ -16,6 +16,7 @@
 #include <QPushButton>
 #include <QShortcut>
 #include <QStyle>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -180,8 +181,13 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     auto *tabs = new QTabWidget;
     tabs->setAccessibleName(QStringLiteral("Main navigation"));
     tabs->addTab(makeHomePage(), QStringLiteral("Home"));
+    const int logTab = tabs->addTab(makeExpensesPage(), QStringLiteral("+"));
+    const QString logExpense = QStringLiteral("Log expense");
+    tabs->setTabToolTip(logTab, logExpense);
+#if QT_CONFIG(accessibility)
+    tabs->tabBar()->setAccessibleTabName(logTab, logExpense);
+#endif
     tabs->addTab(makeBudgetsPage(), QStringLiteral("Budgets"));
-    tabs->addTab(makeExpensesPage(), QStringLiteral("Expenses"));
     layout->addWidget(tabs, 1);
 
     feedback_ = new QLabel;
