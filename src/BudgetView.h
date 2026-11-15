@@ -7,6 +7,7 @@
 
 class QComboBox;
 class QDateEdit;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QTableWidget;
@@ -30,6 +31,9 @@ private:
     QWidget *makeHomePage();
     QWidget *makeBudgetsPage();
     QWidget *makeExpensesPage();
+    QWidget *makeBudgetDetailsPanel();
+    void toggleBudgetDetails(int row);
+    void hideBudgetDetails();
     void applyAppearance();
     void saveBudget();
     void updateSelectedBudget();
@@ -53,5 +57,11 @@ private:
     QTableWidget *expensesTable_;
     QWidget *budgetsEmpty_;
     QWidget *expensesEmpty_;
+    QGroupBox *budgetDetailsPanel_;
+    QLabel *budgetDetailsPeriod_;
+    QLabel *budgetDetailsTotal_;
+    QTableWidget *budgetDetailsTable_;
+    QWidget *budgetDetailsEmpty_;
+    int expandedBudgetRow_ = -1;
     QPalette appearancePalette_;
 };
