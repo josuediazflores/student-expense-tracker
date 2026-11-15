@@ -180,6 +180,7 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
 
     auto *tabs = new QTabWidget;
     tabs->setAccessibleName(QStringLiteral("Main navigation"));
+    tabs->tabBar()->setObjectName(QStringLiteral("mainNavigation"));
     tabs->addTab(makeHomePage(), QStringLiteral("Home"));
     const int logTab = tabs->addTab(makeExpensesPage(), QStringLiteral("+"));
     const QString logExpense = QStringLiteral("Log expense");
@@ -415,6 +416,20 @@ void BudgetView::applyAppearance() {
     setStyleSheet(QStringLiteral(R"(
         QLabel[muted="true"] { color: %1; }
         QLabel[negative="true"], QLabel[error="true"] { color: %2; }
+        QTabBar#mainNavigation::tab {
+            height: 30px; padding: 0 12px;
+            background: palette(button); color: palette(button-text);
+            border: 1px solid %3; border-radius: 6px;
+        }
+        QTabBar#mainNavigation::tab:middle {
+            width: 30px; padding: 0; margin: 0 5px;
+            border-radius: 16px; font-weight: 600;
+        }
+        QTabBar#mainNavigation::tab:hover { border-color: %1; }
+        QTabBar#mainNavigation::tab:selected {
+            background: %4; color: %5; border-color: %4;
+        }
+        QTabBar#mainNavigation::tab:selected:focus { border-color: palette(text); }
         QGroupBox { border: 1px solid %3; border-radius: 9px; margin-top: 8px; }
         QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }
         QLineEdit[amountField="true"], QComboBox, QDateEdit {
