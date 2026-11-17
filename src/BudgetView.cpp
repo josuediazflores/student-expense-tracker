@@ -12,10 +12,12 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPalette>
 #include <QPushButton>
 #include <QShortcut>
 #include <QStyle>
+#include <QStyleOptionTab>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -25,6 +27,22 @@
 
 namespace {
 const QString kDateFormat = QStringLiteral("MMM d, yyyy");
+
+bool usesDarkPalette(const QPalette &palette) {
+    return palette.color(QPalette::Window).lightness() < 128;
+}
+
+QColor controlBorderColor(bool dark) {
+    return QColor(dark ? QStringLiteral("#424449") : QStringLiteral("#d4d7dc"));
+}
+
+QColor accentColor(const QPalette &palette) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+    return palette.color(QPalette::Active, QPalette::Accent);
+#else
+    return palette.color(QPalette::Active, QPalette::Highlight);
+#endif
+}
 
 QString textOnAccent(const QColor &accent) {
     const auto linear = [](qreal channel) {
@@ -37,6 +55,77 @@ QString textOnAccent(const QColor &accent) {
     // Choose the stronger contrast for the user's accent, including pale colors.
     return luminance > 0.179 ? QStringLiteral("#000000") : QStringLiteral("#ffffff");
 }
+
+class NavigationBar : public QTabBar {
+public:
+    NavigationBar() {
+        setExpanding(false);
+        setDrawBase(false);
+    }
+
+protected:
+    QSize tabSizeHint(int index) const override {
+        const int labelWidth = fontMetrics().horizontalAdvance(tabText(index));
+        return {index == 1 ? circleSize : qMax(88, labelWidth + 26), circleSize};
+    }
+
+    void paintEvent(QPaintEvent *) override {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette appColors = QApplication::palette();
+        const QColor accent = accentColor(appColors);
+        const QColor outline = controlBorderColor(usesDarkPalette(appColors));
+
+        const auto drawTab = [&](int index) {
+            if (index >= count()) return;
+            QStyleOptionTab option;
+            initStyleOption(&option, index);
+            const bool selected = option.state.testFlag(QStyle::State_Selected);
+            const bool focused = selected && hasFocus();
+            const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+            const QPalette &colors = option.palette;
+            const QColor textColor = selected ? QColor(textOnAccent(accent))
+                                              : colors.color(QPalette::ButtonText);
+            const QColor borderColor = focused ? textColor
+                                     : selected ? accent
+                                     : hovered ? colors.color(QPalette::ButtonText) : outline;
+
+            const QRectF tab(option.rect);
+            const bool center = index == 1;
+            QRectF shape = tab.adjusted(1, 1, -1, -1);
+            if (!center) {
+                // Extend the capsule behind the center button. Paint that button last.
+                shape.adjust(index == 2 ? -overlap : 0, 7, index == 0 ? overlap : 0, -7);
+            }
+            painter.setPen(QPen(borderColor, focused ? 2 : 1));
+            painter.setBrush(selected ? accent : colors.color(QPalette::Button));
+            const qreal radius = shape.height() / 2;
+            painter.drawRoundedRect(shape, radius, radius);
+
+            QFont labelFont = font();
+            if (center) {
+                labelFont.setPointSize(16);
+                labelFont.setBold(true);
+            }
+            painter.setFont(labelFont);
+            painter.setPen(textColor);
+            painter.drawText(tab, Qt::AlignCenter, option.text);
+        };
+
+        drawTab(0);
+        drawTab(2);
+        drawTab(1);
+    }
+
+private:
+    static constexpr int circleSize = 46;
+    static constexpr int overlap = 12;
+};
+
+class NavigationTabs : public QTabWidget {
+public:
+    NavigationTabs() { setTabBar(new NavigationBar); }
+};
 
 QLabel *makeLabel(const QString &text, int size, bool bold = false, bool muted = false) {
     auto *label = new QLabel(text);
@@ -178,9 +267,8 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(12);
 
-    auto *tabs = new QTabWidget;
+    auto *tabs = new NavigationTabs;
     tabs->setAccessibleName(QStringLiteral("Main navigation"));
-    tabs->tabBar()->setObjectName(QStringLiteral("mainNavigation"));
     tabs->addTab(makeHomePage(), QStringLiteral("Home"));
     const int logTab = tabs->addTab(makeExpensesPage(), QStringLiteral("+"));
     connect(recentExpensesAction_, &QPushButton::clicked, tabs,
@@ -441,32 +529,14 @@ void BudgetView::applyAppearance() {
     appearancePalette_ = colors;
     // Drop resolved stylesheet colors before applying a changed system palette.
     setStyleSheet(QString());
-    const bool dark = colors.color(QPalette::Window).lightness() < 128;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
-    const QColor accent = colors.color(QPalette::Active, QPalette::Accent);
-#else
-    const QColor accent = colors.color(QPalette::Active, QPalette::Highlight);
-#endif
+    const bool dark = usesDarkPalette(colors);
+    const QColor accent = accentColor(colors);
     // Opaque surfaces and system colors keep both macOS appearances readable.
     setStyleSheet(QStringLiteral(R"(
         QLabel[muted="true"] { color: %1; }
         QLabel[negative="true"], QLabel[error="true"] { color: %2; }
         QWidget#balanceCard { background: palette(base); border: 1px solid %3; border-radius: 9px; }
         QWidget[recentExpenseRow="true"] { border-bottom: 1px solid %3; }
-        QTabBar#mainNavigation::tab {
-            height: 30px; padding: 0 12px;
-            background: palette(button); color: palette(button-text);
-            border: 1px solid %3; border-radius: 6px;
-        }
-        QTabBar#mainNavigation::tab:middle {
-            width: 30px; padding: 0; margin: 0 5px;
-            border-radius: 16px; font-weight: 600;
-        }
-        QTabBar#mainNavigation::tab:hover { border-color: %1; }
-        QTabBar#mainNavigation::tab:selected {
-            background: %4; color: %5; border-color: %4;
-        }
-        QTabBar#mainNavigation::tab:selected:focus { border-color: palette(text); }
         QGroupBox { border: 1px solid %3; border-radius: 9px; margin-top: 8px; }
         QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 4px; }
         QLineEdit[amountField="true"], QComboBox, QDateEdit {
@@ -515,7 +585,7 @@ void BudgetView::applyAppearance() {
     )")
         .arg(dark ? QStringLiteral("#afb3ba") : QStringLiteral("#5b6169"),
              dark ? QStringLiteral("#ff8a80") : QStringLiteral("#b3261e"),
-             dark ? QStringLiteral("#424449") : QStringLiteral("#d4d7dc"),
+             controlBorderColor(dark).name(),
              accent.name(), textOnAccent(accent),
              accent.lighter(110).name(), accent.darker(115).name(),
              dark ? QStringLiteral("#7e8289") : QStringLiteral("#7d828a"),
