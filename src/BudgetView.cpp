@@ -268,6 +268,7 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     layout->setSpacing(12);
 
     auto *tabs = new NavigationTabs;
+    tabs->setObjectName(QStringLiteral("navigationTabs"));
     tabs->setAccessibleName(QStringLiteral("Main navigation"));
     tabs->addTab(makeHomePage(), QStringLiteral("Home"));
     const int logTab = tabs->addTab(makeExpensesPage(), QStringLiteral("+"));
@@ -535,6 +536,10 @@ void BudgetView::applyAppearance() {
     setStyleSheet(QStringLiteral(R"(
         QLabel[muted="true"] { color: %1; }
         QLabel[negative="true"], QLabel[error="true"] { color: %2; }
+        QTabWidget#navigationTabs::pane {
+            top: -11px; background: %10; border: 1px solid %3; border-radius: 11px;
+        }
+        QTabWidget#navigationTabs::tab-bar { alignment: center; }
         QWidget#balanceCard { background: palette(base); border: 1px solid %3; border-radius: 9px; }
         QWidget[recentExpenseRow="true"] { border-bottom: 1px solid %3; }
         QGroupBox { border: 1px solid %3; border-radius: 9px; margin-top: 8px; }
@@ -589,7 +594,8 @@ void BudgetView::applyAppearance() {
              accent.name(), textOnAccent(accent),
              accent.lighter(110).name(), accent.darker(115).name(),
              dark ? QStringLiteral("#7e8289") : QStringLiteral("#7d828a"),
-             dark ? QStringLiteral("#92baff") : QStringLiteral("#1758b5")));
+             dark ? QStringLiteral("#92baff") : QStringLiteral("#1758b5"),
+             dark ? QStringLiteral("#272727") : QStringLiteral("#f6f6f6")));
 }
 
 void BudgetView::changeEvent(QEvent *event) {
