@@ -125,6 +125,45 @@ TEST_CASE("screen() returns the same content that was pushed") {
     CHECK(sameScreen(s.controller.screen(), s.display.screens.at(0)));
 }
 
+TEST_CASE("budget details show matching expenses within the selected period") {
+    BudgetModel model;
+    BudgetController controller(model);
+    const QDate feb1(2026, 2, 1);
+    const QDate feb28(2026, 2, 28);
+    REQUIRE(controller.createBudget("Groceries", "100", kJan1, kJan31));
+    REQUIRE(controller.createBudget("Groceries", "120", feb1, feb28));
+    REQUIRE(controller.createBudget("Transport", "40", kJan1, kJan31));
+    REQUIRE(controller.addExpense("2.505", kJan1, " groceries "));
+    REQUIRE(controller.addExpense("1.75", kJan31, "Groceries"));
+    REQUIRE(controller.addExpense("3.00", kJan31, "GROCERIES"));
+    REQUIRE(controller.addExpense("8.00", feb1, "Groceries"));
+    REQUIRE(controller.addExpense("9.00", kJan31, "Other"));
+    REQUIRE(controller.addExpense("10.00", kJan31));
+    REQUIRE(controller.addExpense("11.00", kJan1.addDays(-1), "Groceries"));
+
+    const auto january = controller.budgetDetails(0);
+    REQUIRE(january.has_value());
+    CHECK(january->category == "Groceries");
+    CHECK(january->period == controller.screen().budgets.at(0).period);
+    CHECK(january->totalSpent == "$7.255");
+    REQUIRE(january->expenses.size() == 3);
+    CHECK(january->expenses.at(0).amount == "$3.00");
+    CHECK(january->expenses.at(1).amount == "$1.75");
+    CHECK(january->expenses.at(2).amount == "$2.505");
+
+    const auto february = controller.budgetDetails(1);
+    REQUIRE(february.has_value());
+    CHECK(february->totalSpent == "$8.00");
+    CHECK(february->expenses.size() == 1);
+
+    const auto transport = controller.budgetDetails(2);
+    REQUIRE(transport.has_value());
+    CHECK(transport->expenses.isEmpty());
+    CHECK(transport->totalSpent == "$0.00");
+    CHECK_FALSE(controller.budgetDetails(-1).has_value());
+    CHECK_FALSE(controller.budgetDetails(3).has_value());
+}
+
 TEST_CASE("attaching a null display pushes nothing and detaches the old one") {
     Wired w;
     REQUIRE(w.display.screens.size() == 1);
