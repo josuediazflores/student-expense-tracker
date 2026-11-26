@@ -75,6 +75,7 @@ private:
     QProgressBar *spendingProgress_;
     QHBoxLayout *homeSummary_ = nullptr;
     QHBoxLayout *homeColumns_ = nullptr;
+    QHBoxLayout *expenseColumns_ = nullptr;
     QVBoxLayout *activeBudgetRows_;
     QWidget *activeBudgetsEmpty_;
     QLabel *activeBudgetsEmptyTitle_;
