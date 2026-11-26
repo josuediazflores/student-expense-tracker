@@ -41,6 +41,18 @@ ExpenseRow formatExpense(const Expense &expense) {
     return {formatDate(expense.date), formatMoney(expense.amountCents),
             expense.category.isEmpty() ? QStringLiteral("Uncategorized") : expense.category};
 }
+
+bool matchesBudget(const Expense &expense, const Budget &budget) {
+    return expense.date >= budget.startDate && expense.date <= budget.endDate &&
+           expense.category.compare(budget.category, Qt::CaseInsensitive) == 0;
+}
+
+int spendingPercent(const DecimalCents &spent, qint64 limit) {
+    if (spent == 0) return 0;
+    if (spent >= DecimalCents(limit)) return 100;
+    // Only the progress bar uses an approximation. Amounts and overspending stay exact.
+    return qMin(99, static_cast<int>(100.0 * spent.toString().toDouble() / limit));
+}
 }
 
 BudgetController::BudgetController(BudgetModel &model) : model_(model) {}
@@ -69,17 +81,46 @@ bool BudgetController::loadSaved() {
 
 BudgetScreen BudgetController::screen() const {
     BudgetScreen result;
-    result.totalBudget = formatMoney(DecimalCents(model_.totalCents()));
-    result.totalSpending = formatMoney(model_.totalSpendingCents());
+    const qint64 totalBudget = model_.totalCents();
+    const auto &totalSpent = model_.totalSpendingCents();
+    result.totalBudget = formatMoney(DecimalCents(totalBudget));
+    result.totalSpending = formatMoney(totalSpent);
     result.remaining = formatMoney(model_.remainingBudgetCents());
+    result.spendingPercent = spendingPercent(totalSpent, totalBudget);
 
     // Per day is display-only and keeps the existing rounded-currency behaviour.
     const QLocale usEnglish(QLocale::English, QLocale::UnitedStates);
-    for (qsizetype index : shownBudgetOrder()) {
-        const Budget &budget = model_.budgets().at(index);
+    const QDate today = QDate::currentDate();
+    const auto budgetOrder = shownBudgetOrder();
+    const auto &budgets = model_.budgets();
+    QVector<int> activeRows;
+    for (int row = 0; row < budgetOrder.size(); ++row) {
+        const Budget &budget = budgets.at(budgetOrder.at(row));
         result.budgets.append({budget.category, formatMoney(DecimalCents(budget.amountCents)),
                                formatPeriod(budget),
                                usEnglish.toCurrencyString(budget.amountPerDay())});
+        if (budget.startDate <= today && today <= budget.endDate) activeRows.append(row);
+    }
+    std::stable_sort(activeRows.begin(), activeRows.end(), [&](int left, int right) {
+        return budgets.at(budgetOrder.at(left)).endDate < budgets.at(budgetOrder.at(right)).endDate;
+    });
+    for (int row : activeRows) {
+        const Budget &budget = budgets.at(budgetOrder.at(row));
+        DecimalCents spent;
+        for (const Expense &expense : model_.expenses()) {
+            if (matchesBudget(expense, budget)) spent = spent + expense.amountCents;
+        }
+        const DecimalCents limit(budget.amountCents);
+        const bool overBudget = spent > limit;
+        const auto balance = overBudget ? spent - limit : limit - spent;
+        const QString endDate = budget.endDate.year() == today.year()
+            ? budget.endDate.toString(QStringLiteral("MMM d")) : formatDate(budget.endDate);
+        result.activeBudgets.append({
+            row, budget.category, QStringLiteral("Ends %1").arg(endDate),
+            QStringLiteral("%1 of %2 spent").arg(formatMoney(spent), formatMoney(limit)),
+            (overBudget ? QStringLiteral("%1 over") : QStringLiteral("%1 left")).arg(formatMoney(balance)),
+            spendingPercent(spent, budget.amountCents), overBudget,
+        });
     }
 
     for (qsizetype index : shownExpenseOrder())
@@ -96,9 +137,7 @@ std::optional<BudgetDetails> BudgetController::budgetDetails(int shownRow) const
     DecimalCents totalSpent;
     for (qsizetype index : shownExpenseOrder()) {
         const Expense &expense = model_.expenses().at(index);
-        if (expense.date < budget.startDate || expense.date > budget.endDate ||
-            expense.category.compare(budget.category, Qt::CaseInsensitive) != 0)
-            continue;
+        if (!matchesBudget(expense, budget)) continue;
         details.expenses.append(formatExpense(expense));
         totalSpent = totalSpent + expense.amountCents;
     }

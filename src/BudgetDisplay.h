@@ -3,7 +3,7 @@
 #include <QString>
 #include <QVector>
 
-// View-ready text only, so a display never needs a Model type to draw the screen.
+// View-ready values, so a display never needs a Model type to draw the screen.
 struct BudgetRow {
     QString category;
     QString total;
@@ -24,12 +24,24 @@ struct BudgetDetails {
     QVector<ExpenseRow> expenses;  // newest first
 };
 
+struct ActiveBudgetRow {
+    int shownRow;
+    QString category;
+    QString endDate;
+    QString spending;
+    QString balance;
+    int spendingPercent;
+    bool overBudget;
+};
+
 struct BudgetScreen {
     QString totalBudget;
     QString totalSpending;
     QString remaining;
     QVector<BudgetRow> budgets;
     QVector<ExpenseRow> expenses;  // newest first
+    int spendingPercent = 0;
+    QVector<ActiveBudgetRow> activeBudgets;  // soonest end date first
 };
 
 // The user's answer to a duplicate-budget question.
