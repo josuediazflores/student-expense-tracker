@@ -12,19 +12,116 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPainter>
 #include <QPalette>
+#include <QPixmap>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QResizeEvent>
+#include <QScrollArea>
 #include <QShortcut>
 #include <QStyle>
+#include <QStyledItemDelegate>
+#include <QStyleOptionTab>
+#include <QStylePainter>
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
 #include <cmath>
+#include <utility>
 
 namespace {
 const QString kDateFormat = QStringLiteral("MMM d, yyyy");
+constexpr int kExpenseHistoryRowHeight = 48;
+constexpr int kVisibleExpenseHistoryRows = 6;
+
+class ExpenseHistoryDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override {
+        QStyleOptionViewItem cell(option);
+        initStyleOption(&cell, index);
+        const QString category = std::exchange(cell.text, QString());
+        const QStyle *style = cell.widget ? cell.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &cell, painter, cell.widget);
+
+        QFont categoryFont = cell.font;
+        categoryFont.setBold(true);
+        QFont dateFont = cell.font;
+        dateFont.setPointSizeF(qMax<qreal>(9, dateFont.pointSizeF() - 1));
+        const QFontMetrics categoryMetrics(categoryFont);
+        const QFontMetrics dateMetrics(dateFont);
+        const auto bounds = cell.rect.adjusted(6, 0, -6, 0);
+        const int top = bounds.top() + (bounds.height() - categoryMetrics.height() - dateMetrics.height()) / 2;
+        const QRect categoryLine(bounds.left(), top, bounds.width(), categoryMetrics.height());
+        const QRect dateLine(bounds.left(), top + categoryMetrics.height(), bounds.width(), dateMetrics.height());
+
+        painter->save();
+        painter->setClipRect(cell.rect, Qt::IntersectClip);
+        painter->setFont(categoryFont);
+        painter->setPen(cell.palette.color(QPalette::Text));
+        painter->drawText(categoryLine, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                          categoryMetrics.elidedText(category, Qt::ElideRight, bounds.width()));
+        painter->setFont(dateFont);
+        painter->setPen(cell.palette.color(QPalette::PlaceholderText));
+        painter->drawText(dateLine, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine,
+                          dateMetrics.elidedText(index.data(Qt::UserRole).toString(), Qt::ElideRight, bounds.width()));
+        painter->restore();
+    }
+};
+
+class NavigationTabBar : public QTabBar {
+protected:
+    bool event(QEvent *event) override {
+        // The side tabs paint beyond their hit rectangles, so repaint the joins on hover.
+        switch (event->type()) {
+        case QEvent::HoverEnter:
+        case QEvent::HoverMove:
+        case QEvent::HoverLeave:
+            update();
+            break;
+        default:
+            break;
+        }
+        return QTabBar::event(event);
+    }
+
+    void paintEvent(QPaintEvent *) override {
+        constexpr int overlap = 5;
+        QStylePainter painter(this);
+        for (int index : {0, 2}) {
+            QStyleOptionTab label;
+            initStyleOption(&label, index);
+            QStyleOptionTab shape(label);
+            // Extend the backgrounds toward the center without moving labels or click targets.
+            const bool extendsRight = (index == 0) != isRightToLeft();
+            if (extendsRight)
+                shape.rect.setRight(shape.rect.right() + overlap);
+            else
+                shape.rect.setLeft(shape.rect.left() - overlap);
+            painter.drawControl(QStyle::CE_TabBarTabShape, shape);
+            painter.drawControl(QStyle::CE_TabBarTabLabel, label);
+        }
+
+        // Keep the expense circle in front when either of the side tabs is selected.
+        QStyleOptionTab expense;
+        initStyleOption(&expense, 1);
+        painter.drawControl(QStyle::CE_TabBarTab, expense);
+    }
+};
+
+class NavigationTabs : public QTabWidget {
+public:
+    NavigationTabs() {
+        auto *bar = new NavigationTabBar;
+        bar->setDrawBase(false);
+        setTabBar(bar);
+    }
+};
 
 QString textOnAccent(const QColor &accent) {
     const auto linear = [](qreal channel) {
@@ -48,16 +145,14 @@ QLabel *makeLabel(const QString &text, int size, bool bold = false, bool muted =
     return label;
 }
 
-QWidget *makeSummary(const QString &caption, QLabel *&value, bool prominent = false) {
-    auto *widget = new QWidget;
-    auto *layout = new QVBoxLayout(widget);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(3);
-    layout->addWidget(makeLabel(caption, 11, false, true));
-    value = makeLabel(QStringLiteral("$0.00"), prominent ? 34 : 20, prominent);
-    value->setAccessibleDescription(caption);
-    layout->addWidget(value);
-    return widget;
+QProgressBar *makeSpendingProgress(const QString &accessibleName, int height) {
+    auto *progress = new QProgressBar;
+    progress->setObjectName(QStringLiteral("homeSpendingProgress"));
+    progress->setAccessibleName(accessibleName);
+    progress->setTextVisible(false);
+    progress->setFixedHeight(height);
+    progress->setValue(0);
+    return progress;
 }
 
 QFormLayout *makeForm() {
@@ -178,20 +273,38 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
     layout->setContentsMargins(20, 18, 20, 18);
     layout->setSpacing(12);
 
-    auto *tabs = new QTabWidget;
-    tabs->setAccessibleName(QStringLiteral("Main navigation"));
-    tabs->tabBar()->setObjectName(QStringLiteral("mainNavigation"));
-    tabs->addTab(makeHomePage(), QStringLiteral("Home"));
-    const int logTab = tabs->addTab(makeExpensesPage(), QStringLiteral("+"));
-    connect(recentExpensesAction_, &QPushButton::clicked, tabs,
-            [tabs, logTab] { tabs->setCurrentIndex(logTab); });
+    tabs_ = new NavigationTabs;
+    tabs_->setObjectName(QStringLiteral("navigationTabs"));
+    tabs_->setAccessibleName(QStringLiteral("Main navigation"));
+    tabs_->tabBar()->setObjectName(QStringLiteral("mainNavigation"));
+    const int homeTab = tabs_->addTab(makeHomePage(), QStringLiteral("Home"));
+    const int logTab = tabs_->addTab(makeExpensesPage(), QStringLiteral("+"));
+    connect(recentExpensesAction_, &QPushButton::clicked, this, [this, logTab] {
+        tabs_->setCurrentIndex(logTab);
+        if (expensesTable_->rowCount() > 0) expensesTable_->setFocus();
+        else expenseAmount_->setFocus();
+    });
     const QString logExpense = QStringLiteral("Log expense");
-    tabs->setTabToolTip(logTab, logExpense);
+    tabs_->setTabToolTip(logTab, logExpense);
 #if QT_CONFIG(accessibility)
-    tabs->tabBar()->setAccessibleTabName(logTab, logExpense);
+    tabs_->tabBar()->setAccessibleTabName(logTab, logExpense);
 #endif
-    tabs->addTab(makeBudgetsPage(), QStringLiteral("Budgets"));
-    layout->addWidget(tabs, 1);
+    budgetsTab_ = tabs_->addTab(makeBudgetsPage(), QStringLiteral("Budgets"));
+    connect(addBudgetAction_, &QPushButton::clicked, this, [this] {
+        tabs_->setCurrentIndex(budgetsTab_);
+        budgetAmount_->setFocus();
+    });
+    connect(tabs_, &QTabWidget::currentChanged, this, [this, homeTab, logTab](int tab) {
+        if (tab == homeTab) showHome(controller_.screen());
+        if (tab == logTab && !tabs_->tabBar()->hasFocus()) expenseAmount_->setFocus();
+    });
+    connect(tabs_->tabBar(), &QTabBar::tabBarClicked, this, [this, logTab](int tab) {
+        if (tab != logTab) return;
+        QMetaObject::invokeMethod(expenseAmount_, [this, logTab] {
+            if (tabs_->currentIndex() == logTab) expenseAmount_->setFocus();
+        }, Qt::QueuedConnection);
+    });
+    layout->addWidget(tabs_, 1);
 
     feedback_ = new QLabel;
     feedback_->setAccessibleDescription(QStringLiteral("Status"));
@@ -202,24 +315,83 @@ BudgetView::BudgetView(BudgetController &controller, QWidget *parent)
 }
 
 QWidget *BudgetView::makeHomePage() {
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("homeScroll"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
     auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("homePage"));
     auto *layout = makePageLayout(page);
-    layout->addWidget(makeLabel(QStringLiteral("Student budgets"), 20, true));
 
     auto *balanceCard = new QWidget;
     balanceCard->setObjectName(QStringLiteral("balanceCard"));
-    auto *summary = new QHBoxLayout(balanceCard);
-    summary->setContentsMargins(16, 12, 16, 12);
-    summary->setSpacing(16);
-    summary->addWidget(makeSummary(QStringLiteral("Remaining"), remaining_, true), 2, Qt::AlignVCenter);
-    summary->addWidget(makeSummary(QStringLiteral("Total budget"), totalBudget_), 1, Qt::AlignVCenter);
-    summary->addWidget(makeSummary(QStringLiteral("Total spending"), totalSpending_), 1, Qt::AlignVCenter);
+    homeSummary_ = new QHBoxLayout(balanceCard);
+    homeSummary_->setContentsMargins(20, 16, 20, 16);
+    homeSummary_->setSpacing(12);
+
+    auto *balance = new QVBoxLayout;
+    balance->setSpacing(3);
+    balance->addWidget(makeLabel(QStringLiteral("Remaining budget"), 12, true));
+    remaining_ = makeLabel(QStringLiteral("$0.00"), 38, true);
+    remaining_->setAccessibleDescription(QStringLiteral("Remaining budget"));
+    balance->addWidget(remaining_);
+    homeSummary_->addLayout(balance, 1);
+
+    auto *spending = new QVBoxLayout;
+    spending->setSpacing(7);
+    spending->addStretch();
+    auto *totals = new QHBoxLayout;
+    totalSpending_ = makeLabel(QString(), 11, true);
+    totalBudget_ = makeLabel(QString(), 11, true);
+    totals->addWidget(totalSpending_);
+    totals->addStretch();
+    totals->addWidget(totalBudget_);
+    spending->addLayout(totals);
+    spendingProgress_ = makeSpendingProgress(QStringLiteral("Overall budget used"), 6);
+    spending->addWidget(spendingProgress_);
+    spending->addSpacing(5);
+    homeSummary_->addLayout(spending, 1);
     layout->addWidget(balanceCard);
 
-    auto *activity = new QVBoxLayout;
+    homeColumns_ = new QHBoxLayout;
+    homeColumns_->setSpacing(12);
+    auto *budgetPanel = new QWidget;
+    budgetPanel->setProperty("pageCard", true);
+    auto *budgets = new QVBoxLayout(budgetPanel);
+    budgets->setContentsMargins(15, 12, 15, 12);
+    budgets->setSpacing(6);
+    budgets->addWidget(makeLabel(QStringLiteral("Active budgets"), 15, true));
+    activeBudgetRows_ = new QVBoxLayout;
+    activeBudgetRows_->setSpacing(0);
+    budgets->addLayout(activeBudgetRows_);
+
+    activeBudgetsEmpty_ = new QWidget;
+    auto *empty = new QHBoxLayout(activeBudgetsEmpty_);
+    empty->setContentsMargins(0, 5, 0, 4);
+    empty->setSpacing(10);
+    homeMascot_ = new QLabel;
+    homeMascot_->setPixmap(QPixmap(QStringLiteral(":/ui/student-mascot.png")));
+    homeMascot_->setScaledContents(true);
+    homeMascot_->setFixedSize(54, 54);
+    empty->addWidget(homeMascot_);
+    auto *emptyContent = new QVBoxLayout;
+    emptyContent->setSpacing(5);
+    activeBudgetsEmptyTitle_ = makeLabel(QString(), 12, true);
+    emptyContent->addWidget(activeBudgetsEmptyTitle_);
+    addBudgetAction_ = makeButton(QStringLiteral("Add a budget"), true);
+    emptyContent->addWidget(addBudgetAction_, 0, Qt::AlignLeft);
+    empty->addLayout(emptyContent);
+    empty->addStretch();
+    budgets->addWidget(activeBudgetsEmpty_);
+    homeColumns_->addWidget(budgetPanel, 6, Qt::AlignTop);
+
+    auto *activityPanel = new QWidget;
+    activityPanel->setProperty("pageCard", true);
+    auto *activity = new QVBoxLayout(activityPanel);
+    activity->setContentsMargins(15, 12, 15, 12);
     activity->setSpacing(0);
     auto *heading = new QHBoxLayout;
-    heading->addWidget(makeLabel(QStringLiteral("Recent activity"), 12, true));
+    heading->addWidget(makeLabel(QStringLiteral("Recent activity"), 15, true));
     heading->addStretch();
     recentExpensesAction_ = new QPushButton;
     recentExpensesAction_->setObjectName(QStringLiteral("recentExpensesAction"));
@@ -235,18 +407,62 @@ QWidget *BudgetView::makeHomePage() {
         expense.category = makeLabel(QString(), 12);
         expense.category->setTextFormat(Qt::PlainText);
         expense.date = makeLabel(QString(), 11, false, true);
-        expense.amount = makeLabel(QString(), 12);
-        row->addWidget(expense.category);
-        row->addWidget(expense.date);
+        expense.amount = makeLabel(QString(), 12, true);
+        auto *details = new QVBoxLayout;
+        details->setSpacing(2);
+        details->addWidget(expense.category);
+        details->addWidget(expense.date);
+        row->addLayout(details);
         row->addStretch();
         row->addWidget(expense.amount);
         activity->addWidget(expense.container);
     }
     recentExpensesEmpty_ = makeLabel(QStringLiteral("No expenses yet."), 12, false, true);
     activity->addWidget(recentExpensesEmpty_);
-    layout->addLayout(activity);
-    layout->addStretch();
-    return page;
+    homeColumns_->addWidget(activityPanel, 5, Qt::AlignTop);
+    layout->addLayout(homeColumns_);
+    layout->addStretch(1);
+    scroll->setWidget(page);
+    return scroll;
+}
+
+QWidget *BudgetView::makeActiveBudgetRow(const ActiveBudgetRow &budget) {
+    auto *widget = new QWidget;
+    widget->setProperty("homeBudgetRow", true);
+    auto *layout = new QVBoxLayout(widget);
+    layout->setContentsMargins(0, 6, 0, 8);
+    layout->setSpacing(4);
+
+    auto *heading = new QHBoxLayout;
+    QString categoryText = budget.category;
+    categoryText.replace(QStringLiteral("&"), QStringLiteral("&&"));
+    auto *category = new QPushButton(categoryText);
+    category->setObjectName(QStringLiteral("homeBudgetLink"));
+    category->setFlat(true);
+    category->setAccessibleName(QStringLiteral("View expenses for %1").arg(budget.category));
+    connect(category, &QPushButton::clicked, this, [this, row = budget.shownRow] {
+        tabs_->setCurrentIndex(budgetsTab_);
+        budgetsTable_->selectRow(row);
+        if (expandedBudgetRow_ != row) toggleBudgetDetails(row);
+    });
+    heading->addWidget(category, 0, Qt::AlignLeft);
+    heading->addStretch();
+    auto *amount = makeLabel(budget.balance, 12, true);
+    amount->setProperty("negative", budget.overBudget);
+    heading->addWidget(amount);
+    layout->addLayout(heading);
+
+    auto *details = new QHBoxLayout;
+    details->addWidget(makeLabel(budget.endDate, 11, false, true));
+    details->addStretch();
+    details->addWidget(makeLabel(budget.spending, 11, false, true));
+    layout->addLayout(details);
+
+    auto *progress = makeSpendingProgress(QStringLiteral("%1 budget used").arg(budget.category), 4);
+    progress->setProperty("negative", budget.overBudget);
+    progress->setValue(budget.spendingPercent);
+    layout->addWidget(progress);
+    return widget;
 }
 
 QWidget *BudgetView::makeBudgetsPage() {
@@ -386,54 +602,116 @@ void BudgetView::hideBudgetDetails() {
 }
 
 QWidget *BudgetView::makeExpensesPage() {
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName(QStringLiteral("expenseScroll"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
     auto *page = new QWidget;
+    page->setObjectName(QStringLiteral("expensePage"));
     auto *layout = makePageLayout(page);
-    expenseCategory_ = makeCategoryPicker();
-    expenseAmount_ = new QLineEdit;
-    expenseAmount_->setProperty("amountField", true);
-    expenseAmount_->setPlaceholderText(QStringLiteral("12.50"));
-    expenseDate_ = makeDateEdit(QDate::currentDate());
+    expenseColumns_ = new QHBoxLayout;
+    expenseColumns_->setSpacing(12);
 
-    auto *expenseBox = new QGroupBox(QStringLiteral("Expense"));
+    auto *expenseBox = new QWidget;
+    expenseBox->setProperty("pageCard", true);
     auto *expenseLayout = new QVBoxLayout(expenseBox);
-    expenseLayout->setContentsMargins(14, 22, 14, 14);
-    expenseLayout->setSpacing(12);
-    auto *expenseForm = makeForm();
-    addField(expenseForm, QStringLiteral("Category"), expenseCategory_);
-    addField(expenseForm, QStringLiteral("Amount ($)"), expenseAmount_);
-    addField(expenseForm, QStringLiteral("Date"), expenseDate_);
+    expenseLayout->setContentsMargins(15, 12, 15, 12);
+    expenseLayout->setSpacing(10);
+    expenseLayout->addWidget(makeLabel(QStringLiteral("Log an expense"), 15, true));
+
+    auto *amountCard = new QWidget;
+    amountCard->setObjectName(QStringLiteral("quickExpenseAmountCard"));
+    auto *amountLayout = new QVBoxLayout(amountCard);
+    amountLayout->setContentsMargins(12, 9, 12, 9);
+    amountLayout->setSpacing(3);
+    auto *amountLabel = makeLabel(QStringLiteral("Amount"), 11, false, true);
+    amountLayout->addWidget(amountLabel);
+    auto *amountRow = new QHBoxLayout;
+    amountRow->setSpacing(4);
+    amountRow->addWidget(makeLabel(QStringLiteral("$"), 29, true, true));
+    expenseAmount_ = new QLineEdit;
+    expenseAmount_->setObjectName(QStringLiteral("quickExpenseAmount"));
+    expenseAmount_->setAccessibleName(QStringLiteral("Amount ($)"));
+    expenseAmount_->setPlaceholderText(QStringLiteral("0.00"));
+    expenseAmount_->setFixedHeight(44);
+    QFont amountFont = expenseAmount_->font();
+    amountFont.setPointSize(29);
+    amountFont.setBold(true);
+    expenseAmount_->setFont(amountFont);
+    amountLabel->setBuddy(expenseAmount_);
+    amountRow->addWidget(expenseAmount_, 1);
+    amountLayout->addLayout(amountRow);
+    expenseLayout->addWidget(amountCard);
+
+    expenseCategory_ = makeCategoryPicker();
+    expenseDate_ = makeDateEdit(QDate::currentDate());
+    auto *fields = new QHBoxLayout;
+    fields->setSpacing(10);
+    const auto addColumn = [fields](const QString &name, QWidget *input) {
+        auto *column = new QVBoxLayout;
+        column->setSpacing(4);
+        auto *label = makeLabel(name, 11, false, true);
+        label->setBuddy(input);
+        input->setAccessibleName(name);
+        input->setFixedHeight(32);
+        column->addWidget(label);
+        column->addWidget(input);
+        fields->addLayout(column, 1);
+    };
+    addColumn(QStringLiteral("Category"), expenseCategory_);
+    addColumn(QStringLiteral("Date"), expenseDate_);
+    expenseLayout->addLayout(fields);
     auto *saveExpenseButton = makeButton(QStringLiteral("Save expense"), true);
+    connect(saveExpenseButton, &QPushButton::clicked, this, &BudgetView::saveExpense);
+    connect(expenseAmount_, &QLineEdit::returnPressed, this, &BudgetView::saveExpense);
+    expenseLayout->addWidget(saveExpenseButton);
+    expenseColumns_->addWidget(expenseBox, 5, Qt::AlignTop);
+
+    auto *historyBox = new QWidget;
+    historyBox->setProperty("pageCard", true);
+    auto *history = new QVBoxLayout(historyBox);
+    history->setContentsMargins(15, 12, 15, 12);
+    history->setSpacing(6);
+    auto *historyHeading = new QHBoxLayout;
+    auto *historyTitle = new QVBoxLayout;
+    historyTitle->setSpacing(3);
+    historyTitle->addWidget(makeLabel(QStringLiteral("Expense history"), 15, true));
+    historyTitle->addWidget(makeLabel(QStringLiteral("Newest first"), 11, false, true));
+    historyHeading->addLayout(historyTitle);
+    historyHeading->addStretch();
     auto *deleteExpense = makeButton(QStringLiteral("Delete expense"));
-    deleteExpense->setEnabled(false);
-    connect(saveExpenseButton, &QPushButton::clicked, this, [this] { saveExpense(); });
+    deleteExpense->setObjectName(QStringLiteral("deleteExpenseAction"));
+    deleteExpense->hide();
+    historyHeading->addWidget(deleteExpense);
+    history->addLayout(historyHeading);
     connect(deleteExpense, &QPushButton::clicked, this, [this] {
         controller_.requestDeleteExpense(selectedRow(expensesTable_));
     });
-    auto *expenseButtons = new QHBoxLayout;
-    expenseButtons->addWidget(saveExpenseButton);
-    expenseButtons->addWidget(deleteExpense);
-    expenseButtons->setSpacing(8);
-    expenseLayout->addLayout(expenseForm);
-    expenseLayout->addLayout(expenseButtons);
-    expenseBox->setMaximumWidth(520);
-    layout->addWidget(expenseBox);
 
-    auto *expenseHeading = new QHBoxLayout;
-    expenseHeading->addWidget(makeLabel(QStringLiteral("Expenses"), 12, true));
-    expenseHeading->addStretch();
-    expenseHeading->addWidget(makeLabel(QStringLiteral("Newest first"), 11, false, true));
-    layout->addLayout(expenseHeading);
-    expensesTable_ = makeTable({QStringLiteral("Date"), QStringLiteral("Category"),
-                                 QStringLiteral("Amount")});
-    expensesTable_->setAccessibleName(QStringLiteral("Expenses"));
-    alignColumns(expensesTable_, {2});
-    expensesTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    expensesTable_ = makeTable({QStringLiteral("Category and date"), QStringLiteral("Amount")});
+    expensesTable_->setObjectName(QStringLiteral("expenseHistory"));
+    expensesTable_->setAccessibleName(QStringLiteral("Expense history"));
+    expensesTable_->horizontalHeader()->hide();
+    expensesTable_->horizontalHeader()->setMinimumSectionSize(0);
+    expensesTable_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    expensesTable_->verticalHeader()->setDefaultSectionSize(kExpenseHistoryRowHeight);
+    alignColumns(expensesTable_, {1});
+    expensesTable_->setItemDelegateForColumn(0, new ExpenseHistoryDelegate(expensesTable_));
     expensesEmpty_ = makeEmptyState(expensesTable_, QStringLiteral("No expenses yet"),
-                                    QStringLiteral("Log your first expense above."));
-    layout->addWidget(expensesTable_, 1);
+                                    QStringLiteral("Save an expense to see it here."));
+    history->addWidget(expensesTable_);
     connect(expensesTable_, &QTableWidget::itemSelectionChanged, this,
-            [this, deleteExpense] { deleteExpense->setEnabled(selectedRow(expensesTable_) >= 0); });
-    return page;
+            [this, deleteExpense] { deleteExpense->setVisible(selectedRow(expensesTable_) >= 0); });
+    expenseColumns_->addWidget(historyBox, 6, Qt::AlignTop);
+    layout->addLayout(expenseColumns_);
+    layout->addStretch(1);
+    scroll->setWidget(page);
+    QWidget::setTabOrder(expenseAmount_, expenseCategory_);
+    QWidget::setTabOrder(expenseCategory_, expenseDate_);
+    QWidget::setTabOrder(expenseDate_, saveExpenseButton);
+    QWidget::setTabOrder(saveExpenseButton, expensesTable_);
+    QWidget::setTabOrder(expensesTable_, deleteExpense);
+    return scroll;
 }
 
 void BudgetView::applyAppearance() {
@@ -451,16 +729,26 @@ void BudgetView::applyAppearance() {
     setStyleSheet(QStringLiteral(R"(
         QLabel[muted="true"] { color: %1; }
         QLabel[negative="true"], QLabel[error="true"] { color: %2; }
-        QWidget#balanceCard { background: palette(base); border: 1px solid %3; border-radius: 9px; }
-        QWidget[recentExpenseRow="true"] { border-bottom: 1px solid %3; }
+        QTabWidget#navigationTabs::pane {
+            top: -11px; background: %10; border: 1px solid %3; border-radius: 11px;
+        }
+        QTabWidget#navigationTabs::tab-bar { alignment: center; }
+        QScrollArea#homeScroll, QWidget#homePage,
+        QScrollArea#expenseScroll, QWidget#expensePage { background: %10; border: none; }
+        QWidget#balanceCard, QWidget#quickExpenseAmountCard { background: %11; border-radius: 9px; }
+        QWidget[pageCard="true"] { background: %12; border-radius: 9px; }
+        QWidget[recentExpenseRow="true"], QWidget[homeBudgetRow="true"] { border-bottom: 1px solid %3; }
+        QProgressBar#homeSpendingProgress { background: %3; border: none; border-radius: 2px; }
+        QProgressBar#homeSpendingProgress::chunk { background: %4; border-radius: 2px; }
+        QProgressBar#homeSpendingProgress[negative="true"]::chunk { background: %2; }
         QTabBar#mainNavigation::tab {
-            height: 30px; padding: 0 12px;
+            height: 30px; padding: 0 12px; margin: 4px 0;
             background: palette(button); color: palette(button-text);
             border: 1px solid %3; border-radius: 6px;
         }
         QTabBar#mainNavigation::tab:middle {
-            width: 30px; padding: 0; margin: 0 5px;
-            border-radius: 16px; font-weight: 600;
+            width: 38px; height: 38px; padding: 0; margin: 0;
+            border-radius: 20px; font-weight: 600;
         }
         QTabBar#mainNavigation::tab:hover { border-color: %1; }
         QTabBar#mainNavigation::tab:selected {
@@ -484,6 +772,11 @@ void BudgetView::applyAppearance() {
         QLineEdit[amountField="true"]:focus, QComboBox:focus, QDateEdit:focus {
             border: 1px solid %4;
         }
+        QLineEdit#quickExpenseAmount {
+            background: %11; color: palette(text); border: 1px solid %11;
+            border-radius: 5px; padding: 0 3px;
+        }
+        QLineEdit#quickExpenseAmount:focus { border-color: %4; }
         QPushButton {
             background: palette(button); color: palette(button-text);
             border: 1px solid %3; border-radius: 6px; padding: 0 10px;
@@ -498,16 +791,23 @@ void BudgetView::applyAppearance() {
         QPushButton[primary="true"]:pressed { background: %7; }
         QPushButton[primary="true"]:focus { border: 2px solid palette(text); }
         QPushButton:disabled { color: %8; background: palette(window); border-color: %3; }
-        QPushButton#recentExpensesAction {
-            min-height: 26px; color: %9; background: none; border: 1px solid transparent; padding: 0 2px;
+        QPushButton#recentExpensesAction, QPushButton#homeBudgetLink {
+            min-height: 24px; color: %9; background: none; border: 1px solid transparent; padding: 0 2px;
         }
-        QPushButton#recentExpensesAction:hover { text-decoration: underline; }
-        QPushButton#recentExpensesAction:focus { border-color: %4; }
+        QPushButton#homeBudgetLink { font-size: 12pt; font-weight: bold; text-align: left; }
+        QPushButton#recentExpensesAction:hover, QPushButton#homeBudgetLink:hover { text-decoration: underline; }
+        QPushButton#recentExpensesAction:focus, QPushButton#homeBudgetLink:focus { border-color: %4; }
+        QPushButton#deleteExpenseAction { color: %2; }
         QTableWidget {
             border: 1px solid %3; border-radius: 6px; background: palette(base);
             selection-background-color: %4; selection-color: %5;
         }
         QTableWidget::item { padding: 5px 9px; border: none; }
+        QTableWidget#expenseHistory {
+            border: none; background: %12;
+            selection-background-color: %11; selection-color: palette(text);
+        }
+        QTableWidget#expenseHistory::item { padding: 0 6px; border-bottom: 1px solid %3; }
         QHeaderView::section {
             background: palette(window); color: %1;
             border: none; border-bottom: 1px solid %3; padding: 7px 9px;
@@ -519,7 +819,10 @@ void BudgetView::applyAppearance() {
              accent.name(), textOnAccent(accent),
              accent.lighter(110).name(), accent.darker(115).name(),
              dark ? QStringLiteral("#7e8289") : QStringLiteral("#7d828a"),
-             dark ? QStringLiteral("#92baff") : QStringLiteral("#1758b5")));
+             dark ? QStringLiteral("#92baff") : QStringLiteral("#1758b5"),
+             dark ? QStringLiteral("#272727") : QStringLiteral("#f6f6f6"),
+             dark ? QStringLiteral("#203757") : QStringLiteral("#e9f2ff"),
+             dark ? QStringLiteral("#2c2c2f") : QStringLiteral("#ffffff")));
 }
 
 void BudgetView::changeEvent(QEvent *event) {
@@ -528,6 +831,24 @@ void BudgetView::changeEvent(QEvent *event) {
          event->type() == QEvent::ApplicationPaletteChange) &&
         appearancePalette_ != QApplication::palette())
         applyAppearance();
+}
+
+void BudgetView::resizeEvent(QResizeEvent *event) {
+    QWidget::resizeEvent(event);
+    if (!expenseColumns_) return;
+
+    const bool compact = event->size().width() < 660;
+    const auto direction = compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight;
+    if (homeColumns_->direction() == direction) return;
+    homeSummary_->setDirection(direction);
+    homeSummary_->setStretch(0, compact ? 0 : 1);
+    homeSummary_->setStretch(1, compact ? 0 : 1);
+    homeColumns_->setDirection(direction);
+    homeColumns_->setStretch(0, compact ? 0 : 6);
+    homeColumns_->setStretch(1, compact ? 0 : 5);
+    expenseColumns_->setDirection(direction);
+    expenseColumns_->setStretch(0, compact ? 0 : 5);
+    expenseColumns_->setStretch(1, compact ? 0 : 6);
 }
 
 void BudgetView::saveBudget() {
@@ -545,17 +866,32 @@ void BudgetView::saveExpense() {
     if (controller_.addExpense(expenseAmount_->text(), expenseDate_->date(),
                                expenseCategory_->currentText()))
         expenseAmount_->clear();
+    expenseAmount_->setFocus();
 }
 
-void BudgetView::showScreen(const BudgetScreen &screen) {
-    // A refresh can change the budget at a row index.
-    hideBudgetDetails();
-    totalBudget_->setText(screen.totalBudget);
-    totalSpending_->setText(screen.totalSpending);
+void BudgetView::showHome(const BudgetScreen &screen) {
+    totalBudget_->setText(QStringLiteral("%1 budgeted").arg(screen.totalBudget));
+    totalSpending_->setText(QStringLiteral("%1 spent").arg(screen.totalSpending));
     remaining_->setText(screen.remaining);
-    remaining_->setProperty("negative", screen.remaining.startsWith(QLatin1Char('-')));
-    remaining_->style()->unpolish(remaining_);
-    remaining_->style()->polish(remaining_);
+    const bool overBudget = screen.remaining.startsWith(QLatin1Char('-'));
+    for (QWidget *widget : std::array<QWidget *, 2>{remaining_, spendingProgress_}) {
+        widget->setProperty("negative", overBudget);
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+    }
+    spendingProgress_->setValue(screen.spendingPercent);
+
+    while (auto *item = activeBudgetRows_->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    for (const ActiveBudgetRow &budget : screen.activeBudgets)
+        activeBudgetRows_->addWidget(makeActiveBudgetRow(budget));
+    const bool noBudgets = screen.budgets.isEmpty();
+    activeBudgetsEmpty_->setVisible(screen.activeBudgets.isEmpty());
+    activeBudgetsEmptyTitle_->setText(noBudgets ? QStringLiteral("No budgets yet.")
+                                              : QStringLiteral("No active budgets."));
+    homeMascot_->setVisible(noBudgets);
 
     const bool noExpenses = screen.expenses.isEmpty();
     recentExpensesEmpty_->setVisible(noExpenses);
@@ -572,21 +908,39 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
             row.amount->setText(expense.amount);
         }
     }
+}
 
+void BudgetView::showScreen(const BudgetScreen &screen) {
+    // A refresh can change the budget at a row index.
+    hideBudgetDetails();
+    showHome(screen);
     budgetsTable_->setRowCount(screen.budgets.size());
     for (int row = 0; row < screen.budgets.size(); ++row) {
         const BudgetRow &budget = screen.budgets.at(row);
         fillRow(budgetsTable_, row, {budget.category, budget.total, budget.period, budget.perDay});
     }
     expensesTable_->setRowCount(screen.expenses.size());
+    const int visibleExpenseRows = qMin(expensesTable_->rowCount(), kVisibleExpenseHistoryRows);
+    expensesTable_->setFixedHeight(visibleExpenseRows > 0
+        ? kExpenseHistoryRowHeight * visibleExpenseRows : 96);
+    QFont amountFont = expensesTable_->font();
+    amountFont.setBold(true);
     for (int row = 0; row < screen.expenses.size(); ++row) {
         const ExpenseRow &expense = screen.expenses.at(row);
-        fillRow(expensesTable_, row, {expense.date, expense.category, expense.amount});
+        fillRow(expensesTable_, row, {expense.category, expense.amount});
+        auto *category = expensesTable_->item(row, 0);
+        category->setData(Qt::UserRole, expense.date);
+        const QString description = QStringLiteral("%1, %2").arg(expense.category, expense.date);
+        category->setData(Qt::AccessibleTextRole, description);
+        category->setToolTip(description);
+        auto *amount = expensesTable_->item(row, 1);
+        amount->setFont(amountFont);
+        amount->setToolTip(expense.amount);
     }
 
     // Rows may have moved or gone, so a delete must not act on a stale highlight. This runs after
     // the refill because shrinking a table makes Qt re-select a row near the current one; clear()
-    // drops that current index too, and the selection signals disable the delete buttons.
+    // drops that current index too, and the selection signals reset the delete actions.
     budgetsTable_->selectionModel()->clear();
     expensesTable_->selectionModel()->clear();
     budgetsEmpty_->setVisible(screen.budgets.isEmpty());
@@ -595,8 +949,8 @@ void BudgetView::showScreen(const BudgetScreen &screen) {
         ? QStringLiteral("No budgets yet. Add your first budget above.")
         : QStringLiteral("Double-click a budget or press Return to see its expenses."));
     expensesTable_->setAccessibleDescription(screen.expenses.isEmpty()
-        ? QStringLiteral("No expenses yet. Log your first expense above.")
-        : QStringLiteral("Newest first."));
+        ? QStringLiteral("No expenses yet. Use the entry form to log one.")
+        : QStringLiteral("Newest first. Select an expense to delete it."));
 }
 
 void BudgetView::showMessage(const QString &text, bool isError) {

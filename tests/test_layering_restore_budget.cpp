@@ -4,15 +4,12 @@
 // the repository is changed. Needs the cmake executable; the test fails if it cannot be found.
 #include "doctest.h"
 
-#include "persistence_test_support.h"
-
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
 #include <QStandardPaths>
-
-using namespace persistence_test;
+#include <QTemporaryDir>
 
 namespace {
 QString repoRoot() {
@@ -37,7 +34,6 @@ struct CheckResult {
 };
 
 CheckResult runLayeringCheck(const QString &sourceDir) {
-    ensureApp();
     const QString cmake = cmakeExecutable();
     REQUIRE_MESSAGE(!cmake.isEmpty(), "cmake was not found, so CheckLayering.cmake cannot be run");
     QProcess process;

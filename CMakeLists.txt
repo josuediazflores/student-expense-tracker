@@ -29,6 +29,28 @@ target_link_libraries(budget_controller PUBLIC budget_model budget_store Qt6::Co
 add_executable(app src/main.cpp src/BudgetView.cpp src/ui.qrc)
 target_link_libraries(app PRIVATE budget_controller Qt6::Widgets)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(app_name "SCU Student Budget")
+    set(app_icon src/assets/app-icon.icns)
+    set_source_files_properties("${app_icon}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(app PRIVATE "${app_icon}")
+    set_target_properties(app PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME "${app_name}"
+        MACOSX_BUNDLE_BUNDLE_NAME "${app_name}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER edu.scu.studentbudget.local
+        MACOSX_BUNDLE_ICON_FILE app-icon.icns
+    )
+
+    # Keep the original command-line entry point alongside the Mac app.
+    add_custom_command(TARGET app POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E create_symlink
+            "${app_name}.app/Contents/MacOS/$<TARGET_FILE_NAME:app>"
+            "$<TARGET_BUNDLE_DIR:app>/../app"
+        VERBATIM
+    )
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
     # Teammates can add test files without defining another main().

@@ -164,6 +164,53 @@ TEST_CASE("budget details show matching expenses within the selected period") {
     CHECK_FALSE(controller.budgetDetails(3).has_value());
 }
 
+TEST_CASE("Home shows currently active budgets by end date and their matching spending") {
+    BudgetModel model;
+    BudgetController controller(model);
+    const QDate today = QDate::currentDate();
+    const QDate yesterday = today.addDays(-1);
+    const QDate tomorrow = today.addDays(1);
+    REQUIRE(controller.createBudget("Groceries", "100", today, today.addDays(4)));
+    REQUIRE(controller.createBudget("Other", "50", yesterday, yesterday));
+    REQUIRE(controller.createBudget("Transport", "10", yesterday, today));
+    REQUIRE(controller.createBudget("Dining out", "40", tomorrow, tomorrow));
+    REQUIRE(controller.addExpense("18.125", today, " groceries "));
+    REQUIRE(controller.addExpense("12.25", today, "TRANSPORT"));
+    REQUIRE(controller.addExpense("3", yesterday, "Groceries"));
+    REQUIRE(controller.addExpense("6", today));
+
+    const auto screen = controller.screen();
+    CHECK(screen.totalSpending == "$39.375");
+    CHECK(screen.remaining == "$160.625");
+    CHECK(screen.spendingPercent == 19);
+    REQUIRE(screen.activeBudgets.size() == 2);
+
+    const auto &transport = screen.activeBudgets.at(0);
+    CHECK(transport.category == "Transport");
+    CHECK(transport.shownRow == 2);
+    CHECK(transport.balance == "$2.25 over");
+    CHECK(transport.spendingPercent == 100);
+    CHECK(transport.overBudget);
+
+    const auto &groceries = screen.activeBudgets.at(1);
+    CHECK(groceries.category == "Groceries");
+    CHECK(groceries.spending == "$18.125 of $100.00 spent");
+    CHECK(groceries.balance == "$81.875 left");
+    CHECK(groceries.spendingPercent == 18);
+    CHECK_FALSE(groceries.overBudget);
+}
+
+TEST_CASE("Home spending progress handles expenses without a budget") {
+    BudgetModel model;
+    BudgetController controller(model);
+    CHECK(controller.screen().spendingPercent == 0);
+    REQUIRE(controller.addExpense("5", QDate::currentDate()));
+    const auto screen = controller.screen();
+    CHECK(screen.activeBudgets.isEmpty());
+    CHECK(screen.remaining == "-$5.00");
+    CHECK(screen.spendingPercent == 100);
+}
+
 TEST_CASE("attaching a null display pushes nothing and detaches the old one") {
     Wired w;
     REQUIRE(w.display.screens.size() == 1);

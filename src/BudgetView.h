@@ -10,10 +10,15 @@
 class QComboBox;
 class QDateEdit;
 class QGroupBox;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
+class QProgressBar;
 class QPushButton;
+class QResizeEvent;
+class QTabWidget;
 class QTableWidget;
+class QVBoxLayout;
 
 // Draws the screens the controller pushes and forwards raw input to it. It holds no
 // business rules and sees no Model types.
@@ -29,6 +34,7 @@ public:
 
 protected:
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     struct RecentExpenseRow {
@@ -39,11 +45,13 @@ private:
     };
 
     QWidget *makeHomePage();
+    QWidget *makeActiveBudgetRow(const ActiveBudgetRow &budget);
     QWidget *makeBudgetsPage();
     QWidget *makeExpensesPage();
     QWidget *makeBudgetDetailsPanel();
     void toggleBudgetDetails(int row);
     void hideBudgetDetails();
+    void showHome(const BudgetScreen &screen);
     void applyAppearance();
     void saveBudget();
     void updateSelectedBudget();
@@ -52,6 +60,8 @@ private:
     void showDeleteConfirmation(const QString &message);
 
     BudgetController &controller_;
+    QTabWidget *tabs_;
+    int budgetsTab_;
     QComboBox *category_;
     QLineEdit *budgetAmount_;
     QDateEdit *startDate_;
@@ -62,6 +72,15 @@ private:
     QLabel *totalBudget_;
     QLabel *totalSpending_;
     QLabel *remaining_;
+    QProgressBar *spendingProgress_;
+    QHBoxLayout *homeSummary_ = nullptr;
+    QHBoxLayout *homeColumns_ = nullptr;
+    QHBoxLayout *expenseColumns_ = nullptr;
+    QVBoxLayout *activeBudgetRows_;
+    QWidget *activeBudgetsEmpty_;
+    QLabel *activeBudgetsEmptyTitle_;
+    QLabel *homeMascot_;
+    QPushButton *addBudgetAction_;
     std::array<RecentExpenseRow, 5> recentExpenses_;
     QLabel *recentExpensesEmpty_;
     QPushButton *recentExpensesAction_;

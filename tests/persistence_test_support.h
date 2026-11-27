@@ -1,7 +1,6 @@
 // Author: Huy Tran
-// Shared helpers for the persistence tests: a QCoreApplication (the SQLite driver plugin
-// needs one), raw SQL access to a database file that bypasses BudgetStore, and a fake
-// display. Everything is inline so several test files can include this header.
+// Shared helpers for raw SQL access that bypasses BudgetStore and a fake display.
+// The test runner owns the QCoreApplication used by the SQLite driver.
 #pragma once
 
 #include "BudgetDisplay.h"
@@ -9,7 +8,6 @@
 #include "BudgetStore.h"
 #include "doctest.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QSqlDatabase>
@@ -28,19 +26,9 @@
 
 namespace persistence_test {
 
-// One application object for the whole test binary, created on first use.
-inline void ensureApp() {
-    static int argc = 1;
-    static char name[] = "test_build";
-    static char *argv[] = {name, nullptr};
-    static QCoreApplication app(argc, argv);
-    (void)app;
-}
-
 // A temporary directory that holds database files.
 struct TempDir {
     QTemporaryDir dir;
-    TempDir() { ensureApp(); }
     QString path(const QString &file = QStringLiteral("budget.sqlite")) const {
         return dir.filePath(file);
     }
@@ -48,7 +36,6 @@ struct TempDir {
 
 // Runs `work` on a direct connection to the file, then closes and removes it.
 inline void withRawDb(const QString &path, const std::function<void(QSqlDatabase &)> &work) {
-    ensureApp();
     static int counter = 0;
     const QString name = QStringLiteral("raw_test_connection_%1").arg(++counter);
     {

@@ -36,7 +36,7 @@ cmake -B build
 cmake --build build
 ```
 
-Run `./build/app` on macOS or Linux. On Windows, run `app.exe` from the generated build configuration directory. GitHub Actions builds the app and runs unit tests on pushes and pull requests.
+On macOS, open `build/SCU Student Budget.app` from Finder. You can also run `./build/app` on macOS or Linux. On Windows, run `app.exe` from the generated build configuration directory. GitHub Actions builds the app and runs unit tests on pushes and pull requests.
 
 ## Run the unit tests
 

@@ -2,5 +2,6 @@
   <qresource prefix="/ui">
     <file alias="chevron-down.png">assets/chevron-down.png</file>
     <file alias="chevron-down@2x.png">assets/chevron-down@2x.png</file>
+    <file alias="student-mascot.png">assets/student-mascot.png</file>
   </qresource>
 </RCC>
